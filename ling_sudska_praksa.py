@@ -781,10 +781,10 @@ def glavni_proces():
                 # --- KORAK C: Unos na ling.hr - Step 1 ---
                 page.goto(url_ling_editora, wait_until="networkidle")
 
-                # Stranica automatski prelazi na "Sentenca" nakon 1-3s.
+                # Stranica automatski prelazi na "Sentenca" nakon ~5s.
                 # Čekamo da se auto-switch DOGODI, pa tek onda kliknemo "Sudska odluka".
-                print("  -> Čekam da se stranica stabilizira...")
-                time.sleep(6)
+                print("  -> Čekam da se stranica stabilizira (10s)...")
+                time.sleep(10)
 
                 print("  -> Aktiviram karticu 'Sudska odluka'...")
                 for pokusaj_tab in range(5):
