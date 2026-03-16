@@ -780,16 +780,24 @@ def glavni_proces():
 
                 # --- KORAK C: Unos na ling.hr - Step 1 ---
                 page.goto(url_ling_editora, wait_until="networkidle")
-                time.sleep(4)
 
-                # Aktivacija kartice "Sudska odluka"
-                # Stranica automatski prelazi na "Sentenca" nakon ~1s,
-                # pa moramo kliknuti "Sudska odluka" i provjeriti ostaje li aktivna.
+                # Stranica automatski prelazi na "Sentenca" nakon 1-3s.
+                # Čekamo da se auto-switch DOGODI, pa tek onda kliknemo "Sudska odluka".
+                print("  -> Čekam da se stranica stabilizira...")
+                time.sleep(6)
+
                 print("  -> Aktiviram karticu 'Sudska odluka'...")
                 for pokusaj_tab in range(5):
-                    gumb_sudska = page.locator('div[role="button"]:text-is("Sudska odluka")').first
-                    gumb_sudska.click()
-                    time.sleep(2)
+                    page.evaluate('''() => {
+                        const buttons = document.querySelectorAll('div[role="button"]');
+                        for (const btn of buttons) {
+                            if (btn.textContent.trim() === 'Sudska odluka') {
+                                btn.click();
+                                return;
+                            }
+                        }
+                    }''')
+                    time.sleep(3)
 
                     if page.locator('input[name="title"]').is_visible():
                         print("  -> Kartica 'Sudska odluka' aktivna.")
