@@ -7,7 +7,7 @@ import time
 # 1. KONFIGURACIJA I LISTE
 # ==========================================
 
-genai.configure(api_key="AIzaSyDVErIrBkqFZB205PPskv8bBKucSNB_DmM")
+genai.configure(api_key="AIzaSyCfeB_oOHWCbQa3rrkc5BN4zreAvPrlOhc")
 
 DOZVOLJENE_VRSTE_ODLUKA = ["Rješenje", "Presuda", "Presuda i rješenje", "Odluka", "Zaključak"]
 
