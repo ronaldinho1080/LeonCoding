@@ -168,11 +168,47 @@ def analiziraj_presudu(tekst_presude):
 # ==========================================
 
 def upisi_tekst(page, selektor, tekst):
-    """Upisuje tekst u standardno input/textarea polje."""
+    """
+    Upisuje tekst u standardno input/textarea polje.
+
+    Playwright .fill() postavlja value ali NE aktivira React onChange.
+    React koristi vlastiti synthetic event system i sluša na 'input' event
+    koji se generira kad korisnik tipka, ne kad se programski postavi value.
+
+    Rješenje: koristimo nativeInputValueSetter da postavimo value,
+    pa ručno dispatchamo 'input' event koji React prepoznaje.
+    """
     if tekst:
         try:
             polje = page.locator(selektor)
-            polje.fill(tekst)
+            polje.click()
+            time.sleep(0.2)
+
+            # Koristi React-kompatibilan način za postavljanje vrijednosti
+            page.evaluate('''(args) => {
+                const [sel, val] = args;
+                const el = document.querySelector(sel);
+                if (!el) return;
+
+                // React overridea input.value setter - moramo koristiti native setter
+                const nativeSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value'
+                )?.set || Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement.prototype, 'value'
+                )?.set;
+
+                if (nativeSetter) {
+                    nativeSetter.call(el, val);
+                } else {
+                    el.value = val;
+                }
+
+                // Dispatch 'input' event koji React sluša
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }''', [selektor, tekst])
+
+            time.sleep(0.2)
             page.keyboard.press("Tab")
             time.sleep(0.3)
         except Exception as e:
@@ -415,34 +451,85 @@ def odaberi_checkbox_podrucje_prava(page, trazena_vrijednost):
             print(f"  [!] Dropdown 'Područje prava' se ne otvara.")
             return
 
-        # 2. Pronađi red (parent div.e1xea2lb6) koji sadrži label s traženim tekstom
-        #    i klikni na checkbox input unutar tog reda
+        # 2. Pronađi red koji sadrži label s traženim tekstom
         red = page.locator(
             f'xpath=//div[contains(@class, "e1xea2lb6") and '
             f'.//div[text()="{trazena_vrijednost}"]]'
         ).first
 
+        target_red = None
         if red.count() > 0:
-            red.scroll_into_view_if_needed()
-            time.sleep(0.3)
-            # Klikni na checkbox input unutar reda
-            checkbox = red.locator('input[type="checkbox"]').first
-            checkbox.click(force=True)
-            time.sleep(0.5)
-            print(f"  -> Checkbox označen za: {trazena_vrijednost}")
+            target_red = red
         else:
-            # Fallback: pronađi po parcijalnom tekstu
             red_fb = page.locator(
                 f'xpath=//div[contains(@class, "e1xea2lb6") and '
                 f'.//div[contains(text(), "{trazena_vrijednost.split()[0]}")]]'
             ).first
             if red_fb.count() > 0:
-                red_fb.scroll_into_view_if_needed()
-                time.sleep(0.3)
-                red_fb.locator('input[type="checkbox"]').first.click(force=True)
-                time.sleep(0.5)
-            else:
-                print(f"  [!] Područje prava '{trazena_vrijednost}' nije pronađeno.")
+                target_red = red_fb
+
+        if not target_red:
+            print(f"  [!] Područje prava '{trazena_vrijednost}' nije pronađeno.")
+            page.keyboard.press("Escape")
+            return
+
+        target_red.scroll_into_view_if_needed()
+        time.sleep(0.3)
+
+        # React checkbox: .click(force=True) ne aktivira React onChange.
+        # Moramo koristiti nativeInputValueSetter + dispatch events,
+        # ili kliknuti na ROW div (koji React handler očekuje).
+        # Pokušavamo više strategija:
+
+        checkbox = target_red.locator('input[type="checkbox"]').first
+        oznacen = False
+
+        # Strategija 1: page.mouse.click na koordinatama checkboxa
+        box = checkbox.bounding_box()
+        if box:
+            page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+            time.sleep(0.5)
+            if checkbox.is_checked():
+                oznacen = True
+
+        # Strategija 2: klik na cijeli red (parent div)
+        if not oznacen:
+            target_red.click(force=True)
+            time.sleep(0.5)
+            if checkbox.is_checked():
+                oznacen = True
+
+        # Strategija 3: JavaScript - set checked + dispatch change
+        if not oznacen:
+            page.evaluate('''(labelText) => {
+                const rows = document.querySelectorAll('div');
+                for (const row of rows) {
+                    if (row.className && row.className.includes('e1xea2lb6')) {
+                        const label = row.querySelector('div');
+                        if (label && label.textContent.includes(labelText)) {
+                            const cb = row.querySelector('input[type="checkbox"]');
+                            if (cb) {
+                                const nativeSetter = Object.getOwnPropertyDescriptor(
+                                    window.HTMLInputElement.prototype, 'checked'
+                                ).set;
+                                nativeSetter.call(cb, true);
+                                cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                            }
+                            return;
+                        }
+                    }
+                }
+            }''', trazena_vrijednost.split()[0])
+            time.sleep(0.5)
+            if checkbox.is_checked():
+                oznacen = True
+
+        if oznacen:
+            print(f"  -> Checkbox označen za: {trazena_vrijednost}")
+        else:
+            print(f"  [!] Checkbox za '{trazena_vrijednost}' se nije označio.")
 
         # 3. Zatvori dropdown
         page.keyboard.press("Escape")
@@ -798,6 +885,23 @@ def glavni_proces():
 
                 # Tekst editor (Lexical) - šaljemo HTML za očuvanje formatiranja
                 popuni_lexical_editor(page, tekst_presude_html, tekst_presude)
+
+                # Provjeri jesu li ključna polja popunjena prije klika na Dalje
+                print("  -> Provjera popunjenosti polja...")
+                naslov_val = page.evaluate('document.querySelector(\'input[name="title"]\')?.value || ""')
+                broj_val = page.evaluate('document.querySelector(\'input[name="decisionNumber"]\')?.value || ""')
+                print(f"    Naslov: '{naslov_val}' | Broj: '{broj_val}'")
+                if not naslov_val:
+                    print("  [!] Naslov je prazan! Pokušavam ponovo upisati...")
+                    polje = page.locator('input[name="title"]')
+                    polje.click()
+                    time.sleep(0.2)
+                    polje.fill(podaci.get('naslov', podaci.get('broj_odluke', '')))
+                    time.sleep(0.2)
+                    page.keyboard.press("Tab")
+                    time.sleep(0.5)
+                    naslov_val = page.evaluate('document.querySelector(\'input[name="title"]\')?.value || ""')
+                    print(f"    Naslov nakon ponovnog unosa: '{naslov_val}'")
 
                 # --- Step 1 → Step 2 ---
                 if not klikni_dalje(page, "Step 1 → Step 2"):
