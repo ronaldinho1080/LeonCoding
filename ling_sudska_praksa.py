@@ -274,42 +274,86 @@ def odaberi_iz_padajuceg_izbornika(page, naziv_polja, trazena_vrijednost):
     """
     Odabire vrijednost iz custom dropdown izbornika.
 
-    HTML struktura:
-      div.e1xea2lb14 (wrapper)
-        div.e1xea2lb13 (inner wrapper)
-          div.e1xea2lb4  "Vrsta odluke"       ← label
-          div.e1xea2lb11                       ← trigger (sadrži SVG strelicu)
-            div.e1xea2lb10                     ← prikaz odabrane vrijednosti
-            svg                                ← strelica
-          div.e1xea2lb7                        ← lista opcija
-            div.css-114bz43[title="..."]       ← pojedina opcija
+    Koristi više strategija otvaranja dropdowna jer React komponenta
+    ne reagira uvijek na isti tip klika (posebno nakon zatvaranja
+    prethodnog dropdowna).
     """
     if not trazena_vrijednost:
         return
     try:
         print(f"  -> Biram iz izbornika '{naziv_polja}': {trazena_vrijednost}")
 
-        # Klik na trigger div (sibling labela koji sadrži SVG strelicu)
+        # Zatvori bilo koji prethodno otvoreni dropdown
+        page.keyboard.press("Escape")
+        time.sleep(0.5)
+
         trigger = page.locator(
             f'xpath=//div[text()="{naziv_polja}"]'
             f'/following-sibling::div[*[local-name()="svg"]]'
         ).first
-        trigger.click(force=True)
-        time.sleep(1)
+        trigger.scroll_into_view_if_needed()
+        time.sleep(0.3)
 
-        # Pronađi opciju po title atributu
-        opcija = page.locator(f'div.css-114bz43[title="{trazena_vrijednost}"]')
+        opcija = page.locator(f'div.css-114bz43[title="{trazena_vrijednost}"]').first
+        otvoren = False
 
-        if opcija.count() > 0:
-            opcija.first.wait_for(state="visible", timeout=3000)
-            opcija.first.scroll_into_view_if_needed()
-            time.sleep(0.2)
-            opcija.first.click(force=True)
-            time.sleep(0.5)
-        else:
-            print(f"  [!] Opcija '{trazena_vrijednost}' nije pronađena u izborniku '{naziv_polja}'.")
+        # Strategija 1: dispatch_event('click') - šalje DOM event
+        trigger.dispatch_event('click')
+        time.sleep(1.5)
+        if opcija.is_visible():
+            otvoren = True
+
+        # Strategija 2: page.mouse.click na koordinatama triggera
+        if not otvoren:
             page.keyboard.press("Escape")
             time.sleep(0.3)
+            box = trigger.bounding_box()
+            if box:
+                page.mouse.click(
+                    box['x'] + box['width'] / 2,
+                    box['y'] + box['height'] / 2
+                )
+                time.sleep(1.5)
+                if opcija.is_visible():
+                    otvoren = True
+
+        # Strategija 3: klik na SVG strelicu unutar triggera
+        if not otvoren:
+            page.keyboard.press("Escape")
+            time.sleep(0.3)
+            svg = trigger.locator('svg').first
+            svg.dispatch_event('click')
+            time.sleep(1.5)
+            if opcija.is_visible():
+                otvoren = True
+
+        # Strategija 4: JavaScript native click na trigger
+        if not otvoren:
+            page.keyboard.press("Escape")
+            time.sleep(0.3)
+            page.evaluate('''(labelText) => {
+                const divs = document.querySelectorAll('div');
+                for (const d of divs) {
+                    if (d.textContent.trim() === labelText &&
+                        d.nextElementSibling &&
+                        d.nextElementSibling.querySelector('svg')) {
+                        d.nextElementSibling.click();
+                        return;
+                    }
+                }
+            }''', naziv_polja)
+            time.sleep(1.5)
+            if opcija.is_visible():
+                otvoren = True
+
+        if not otvoren:
+            print(f"  [!] Dropdown '{naziv_polja}' se ne otvara nakon 4 pokušaja.")
+            return
+
+        opcija.scroll_into_view_if_needed()
+        time.sleep(0.2)
+        opcija.click(force=True)
+        time.sleep(0.8)
 
     except Exception as e:
         print(f"  [!] Greška za padajući izbornik '{naziv_polja}': {e}")
@@ -322,55 +366,85 @@ def odaberi_checkbox_podrucje_prava(page, trazena_vrijednost):
     Označava checkbox u izborniku "Područje prava".
 
     HTML struktura stavke:
-      div.css-1rx2okj.e1xea2lb6 (red s checkboxom)
+      div.e1xea2lb6 (red s checkboxom - OVDJE treba kliknuti)
         input[type="checkbox"]
-        div.css-1d193z1.e1xea2lb5 "180301 Igre na sreću..."  ← label
+        div.e1xea2lb5 "180301 Igre na sreću..."
 
-    NAPOMENA: Ovaj dropdown NEMA polje za pretraživanje/filtriranje.
-    Stari pristup s keyboard.type() ne radi jer nema input polja za filtar.
-    Novi pristup: direktno pronađi element po tekstu i klikni.
+    VAŽNO: Klik na label <div> NE togglea checkbox.
+    Treba kliknuti na <input type="checkbox"> ili na parent row <div>.
     """
     if not trazena_vrijednost:
         return
     try:
         print(f"  -> Označavam područje prava: {trazena_vrijednost}")
 
-        # 1. Otvori dropdown klikom na trigger
+        # Zatvori prethodni dropdown
+        page.keyboard.press("Escape")
+        time.sleep(0.5)
+
+        # 1. Otvori dropdown - koristi iste strategije kao za ostale izbornike
         trigger = page.locator(
             'xpath=//div[text()="Područje prava"]'
             '/following-sibling::div[*[local-name()="svg"]]'
         ).first
-        trigger.click(force=True)
-        time.sleep(1)
+        trigger.scroll_into_view_if_needed()
+        time.sleep(0.3)
 
-        # 2. Pronađi opcije kontejner (treći sibling - lista opcija)
-        opcije_kontejner = page.locator(
-            'xpath=//div[text()="Područje prava"]'
-            '/following-sibling::div[contains(@class, "e1xea2lb7")]'
+        # Pokušaj otvoriti dropdown
+        test_opcija = page.locator(f'div.e1xea2lb5:text-is("{trazena_vrijednost}")').first
+        otvoren = False
+
+        for pokusaj in range(3):
+            if pokusaj == 0:
+                trigger.dispatch_event('click')
+            elif pokusaj == 1:
+                box = trigger.bounding_box()
+                if box:
+                    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+            elif pokusaj == 2:
+                trigger.locator('svg').first.dispatch_event('click')
+
+            time.sleep(1.5)
+            if test_opcija.is_visible():
+                otvoren = True
+                break
+            page.keyboard.press("Escape")
+            time.sleep(0.3)
+
+        if not otvoren:
+            print(f"  [!] Dropdown 'Područje prava' se ne otvara.")
+            return
+
+        # 2. Pronađi red (parent div.e1xea2lb6) koji sadrži label s traženim tekstom
+        #    i klikni na checkbox input unutar tog reda
+        red = page.locator(
+            f'xpath=//div[contains(@class, "e1xea2lb6") and '
+            f'.//div[text()="{trazena_vrijednost}"]]'
         ).first
 
-        # 3. Pronađi checkbox label s točnim tekstom i klikni
-        opcija = opcije_kontejner.locator(
-            f'div.css-1d193z1:text-is("{trazena_vrijednost}")'
-        )
-
-        if opcija.count() > 0:
-            opcija.first.scroll_into_view_if_needed()
+        if red.count() > 0:
+            red.scroll_into_view_if_needed()
             time.sleep(0.3)
-            opcija.first.click(force=True)
+            # Klikni na checkbox input unutar reda
+            checkbox = red.locator('input[type="checkbox"]').first
+            checkbox.click(force=True)
             time.sleep(0.5)
+            print(f"  -> Checkbox označen za: {trazena_vrijednost}")
         else:
-            # Fallback: pokušaj s get_by_text (parcijalno podudaranje)
-            opcija_fb = opcije_kontejner.get_by_text(trazena_vrijednost, exact=False)
-            if opcija_fb.count() > 0:
-                opcija_fb.first.scroll_into_view_if_needed()
+            # Fallback: pronađi po parcijalnom tekstu
+            red_fb = page.locator(
+                f'xpath=//div[contains(@class, "e1xea2lb6") and '
+                f'.//div[contains(text(), "{trazena_vrijednost.split()[0]}")]]'
+            ).first
+            if red_fb.count() > 0:
+                red_fb.scroll_into_view_if_needed()
                 time.sleep(0.3)
-                opcija_fb.first.click(force=True)
+                red_fb.locator('input[type="checkbox"]').first.click(force=True)
                 time.sleep(0.5)
             else:
                 print(f"  [!] Područje prava '{trazena_vrijednost}' nije pronađeno.")
 
-        # 4. Zatvori dropdown
+        # 3. Zatvori dropdown
         page.keyboard.press("Escape")
         time.sleep(0.3)
 
@@ -380,20 +454,17 @@ def odaberi_checkbox_podrucje_prava(page, trazena_vrijednost):
         time.sleep(0.3)
 
 
-def popuni_lexical_editor(page, tekst):
+def popuni_lexical_editor(page, tekst_html, tekst_plain):
     """
     Upisuje tekst u Lexical rich-text editor (#editor-output).
 
-    Lexical koristi contenteditable div i upravlja vlastitim stanjem.
-    Playwright-ov .fill() ne aktivira Lexical-ove interne handlere.
+    Prima i HTML i plain-text verziju teksta presude.
+    Koristi ClipboardEvent s text/html za očuvanje formatiranja
+    (paragrafi, bold, struktura) iz originalne presude.
 
-    Koristimo document.execCommand('insertText') koji generira
-    beforeinput event - Lexical ga pravilno obrađuje.
-
-    Za duže tekstove s više redova, svaki red ubacujemo zasebno
-    s insertParagraph između njih.
+    Fallback: insertHTML execCommand, pa insertText za plain tekst.
     """
-    if not tekst:
+    if not tekst_html and not tekst_plain:
         return
     try:
         print("  -> Upisujem tekst presude u editor...")
@@ -402,54 +473,85 @@ def popuni_lexical_editor(page, tekst):
         editor.click(force=True)
         time.sleep(0.5)
 
-        # Obriši postojeći sadržaj
         page.keyboard.press("Control+A")
         time.sleep(0.2)
         page.keyboard.press("Backspace")
         time.sleep(0.3)
 
-        # Ubaci tekst putem execCommand koji Lexical pravilno procesira
-        page.evaluate('''(text) => {
-            const el = document.querySelector('#editor-output');
-            el.focus();
-            document.execCommand('selectAll', false, null);
-            document.execCommand('delete', false, null);
+        if tekst_html:
+            # Metoda 1: ClipboardEvent paste s HTML sadržajem
+            # Lexical obrađuje paste evente i čuva HTML formatiranje
+            uspjeh = page.evaluate('''(html) => {
+                try {
+                    const el = document.querySelector('#editor-output');
+                    el.focus();
+                    document.execCommand('selectAll', false, null);
+                    document.execCommand('delete', false, null);
 
-            const lines = text.split('\\n');
-            for (let i = 0; i < lines.length; i++) {
-                if (i > 0) {
-                    document.execCommand('insertParagraph', false, null);
+                    const dt = new DataTransfer();
+                    dt.setData('text/html', html);
+                    dt.setData('text/plain', html.replace(/<[^>]*>/g, ''));
+                    const pasteEvent = new ClipboardEvent('paste', {
+                        clipboardData: dt,
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true
+                    });
+                    el.dispatchEvent(pasteEvent);
+                    return true;
+                } catch(e) {
+                    return false;
                 }
-                if (lines[i].length > 0) {
-                    document.execCommand('insertText', false, lines[i]);
-                }
-            }
-        }''', tekst)
+            }''', tekst_html)
 
-        time.sleep(0.5)
-        print("  -> Tekst uspješno unesen u editor.")
+            if uspjeh:
+                time.sleep(1)
+                sadrzaj = editor.inner_text().strip()
+                if len(sadrzaj) > 50:
+                    print("  -> Tekst (HTML) uspješno unesen u editor.")
+                    return
+                print("  [!] HTML paste nije unio tekst, pokušavam insertHTML...")
 
-    except Exception as e:
-        print(f"  [!] Greška pri unosu teksta u editor: {e}")
-        # Fallback: pokušaj s clipboard paste eventom
-        try:
-            print("  -> Pokušavam fallback metodu (ClipboardEvent paste)...")
+            # Metoda 2: insertHTML execCommand
+            page.evaluate('''(html) => {
+                const el = document.querySelector('#editor-output');
+                el.focus();
+                document.execCommand('selectAll', false, null);
+                document.execCommand('delete', false, null);
+                document.execCommand('insertHTML', false, html);
+            }''', tekst_html)
+
+            time.sleep(1)
+            sadrzaj = editor.inner_text().strip()
+            if len(sadrzaj) > 50:
+                print("  -> Tekst (insertHTML) uspješno unesen u editor.")
+                return
+            print("  [!] insertHTML nije unio tekst, pokušavam plain text...")
+
+        # Metoda 3: Fallback na plain text s insertText/insertParagraph
+        tekst = tekst_plain or tekst_html
+        if tekst:
             page.evaluate('''(text) => {
                 const el = document.querySelector('#editor-output');
                 el.focus();
-                const dt = new DataTransfer();
-                dt.setData('text/plain', text);
-                const pasteEvent = new ClipboardEvent('paste', {
-                    clipboardData: dt,
-                    bubbles: true,
-                    cancelable: true,
-                    composed: true
-                });
-                el.dispatchEvent(pasteEvent);
+                document.execCommand('selectAll', false, null);
+                document.execCommand('delete', false, null);
+
+                const lines = text.split('\\n');
+                for (let i = 0; i < lines.length; i++) {
+                    if (i > 0) {
+                        document.execCommand('insertParagraph', false, null);
+                    }
+                    if (lines[i].length > 0) {
+                        document.execCommand('insertText', false, lines[i]);
+                    }
+                }
             }''', tekst)
             time.sleep(0.5)
-        except Exception as e2:
-            print(f"  [!] Fallback metoda također nije uspjela: {e2}")
+            print("  -> Tekst (plain) uspješno unesen u editor.")
+
+    except Exception as e:
+        print(f"  [!] Greška pri unosu teksta u editor: {e}")
 
 
 # ==========================================
@@ -536,6 +638,7 @@ def glavni_proces():
                 popis_zakona = [el.inner_text().strip() for el in elementi_zakona if "NN" not in el.inner_text()]
 
                 tekst_presude = page.locator('.decision-text').inner_text()
+                tekst_presude_html = page.locator('.decision-text').inner_html()
 
                 podaci = analiziraj_presudu(tekst_presude)
                 print(f"Pripremljen unos za broj: {podaci.get('naslov', 'Nepoznato')}")
@@ -576,22 +679,39 @@ def glavni_proces():
                 if podaci.get("podrucje_prava"):
                     odaberi_checkbox_podrucje_prava(page, podaci["podrucje_prava"])
 
-                # Tekst editor (Lexical)
-                popuni_lexical_editor(page, tekst_presude)
+                # Tekst editor (Lexical) - šaljemo HTML za očuvanje formatiranja
+                popuni_lexical_editor(page, tekst_presude_html, tekst_presude)
 
-                # Klik "Dalje"
-                page.get_by_role("button", name="Dalje", exact=True).click(force=True)
-                time.sleep(2)
+                # Klik "Dalje" - Step 1 → Step 2
+                print("  -> Klikam 'Dalje' (Step 1 → Step 2)...")
+                dalje = page.locator('div[role="button"]:text-is("Dalje")').first
+                dalje.scroll_into_view_if_needed()
+                time.sleep(0.3)
+                dalje.click(force=True)
+                time.sleep(3)
 
                 # --- KORAK D: Step 2 (Prošle odluke) ---
                 print("  -> Step 2: Prošle odluke - preskačem...")
-                page.wait_for_selector('input[placeholder="Pretraži..."]', timeout=10000)
-                page.get_by_role("button", name="Dalje", exact=True).click(force=True)
-                time.sleep(2)
+                try:
+                    page.wait_for_selector('input[placeholder="Pretraži..."]', timeout=15000)
+                except:
+                    print("  [!] Čekam dodatno za učitavanje Step 2...")
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(3)
+
+                dalje2 = page.locator('div[role="button"]:text-is("Dalje")').first
+                dalje2.scroll_into_view_if_needed()
+                time.sleep(0.3)
+                dalje2.click(force=True)
+                time.sleep(3)
 
                 # --- KORAK E: Step 3 (Propisi) ---
                 print("  -> Step 3: Unosim povezane propise...")
-                page.wait_for_selector('input[placeholder="Pretraži..."]', timeout=10000)
+                try:
+                    page.wait_for_selector('input[placeholder="Pretraži..."]', timeout=15000)
+                except:
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(3)
 
                 for zakon in set(popis_zakona):
                     try:
@@ -610,8 +730,11 @@ def glavni_proces():
 
                     time.sleep(0.5)
 
-                page.get_by_role("button", name="Dalje", exact=True).click(force=True)
-                time.sleep(2)
+                dalje3 = page.locator('div[role="button"]:text-is("Dalje")').first
+                dalje3.scroll_into_view_if_needed()
+                time.sleep(0.3)
+                dalje3.click(force=True)
+                time.sleep(3)
 
                 # --- KORAK F: Završni korak ---
                 print("  -> Završni korak: Pregled...")
