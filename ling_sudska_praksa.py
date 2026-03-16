@@ -1,0 +1,636 @@
+from playwright.sync_api import sync_playwright
+import google.generativeai as genai
+import json
+import time
+
+# ==========================================
+# 1. KONFIGURACIJA I LISTE
+# ==========================================
+
+genai.configure(api_key="VAŠ_GOOGLE_GEMINI_API_KLJUC")
+
+DOZVOLJENE_VRSTE_ODLUKA = ["Rješenje", "Presuda", "Presuda i rješenje", "Odluka", "Zaključak"]
+
+DOZVOLJENE_VRSTE_POSTUPAKA = [
+    "Građanski - prvostupanjski", "Kazneni - prvostupanjski", "Građanski - drugostupanjski",
+    "Kazneni - drugostupanjski", "Građanski - zahtjev za zaštitu zakonitosti", "Građanski - revizija",
+    "Kazneni - drugostupanjski pritvori", "Kazneni - mjesna nadležnost i sukob nadležnosti",
+    "Kazneni - izvanredno preispitivanje presude", "Kazneni - produljenje pritvora",
+    "Kazneni - drugostupanjski žalbeni", "Kazneni - izvanredno ublažavanje kazne",
+    "Kazneni - zahtjev za zaštitu zakonitosti", "Kazneni - neslaganja",
+    "Građanski - delegacija ili sukob nadležnosti", "Građanski - revizija iz trgovačkog spora",
+    "Građanski - izvanredno preispitivanje - prekršaj", "Upravni spor protiv rješenja tijela državne uprave",
+    "Nepoznata vrsta predmeta u SuPri", "Kazneni - zahtjev za izručenje",
+    "Istraga za predmete iz nadležnosti općinskih sudova", "Kazneni - prvostupanjski (županijski)",
+    "Trgovački spor", "Građanski", "Kazneni - zaštita prava na suđenje u razumnom roku - zahtjev",
+    "Sudska uprava", "Prekršajni - javni red i mir i javna sigurnost - drugostupanjski",
+    "Prekršajni - sigurnost prometa - drugostupanjski", "Građanski - razno",
+    "Prekršajni - gospodarstvo - drugostupanjski", "Građanski - drugostupanjski - ovrha",
+    "Kazneni - žalbe u predmetima protiv mlađih punoljetnika i odraslih počinitelja na štetu djece i maloljetnika",
+    "Prekršajni - financijski prekršaj - drugostupanjski", "Kazneni - drugostupanjski maloljetnički predmeti",
+    "Građanski - drugostupanjski - naknada štete", "Građanski - drugostupanjski - razvod braka, povjeravanje djece, uzdržavanje",
+    "Prekršajni - supletorni zatvor - drugostupanjski", "Trgovački spor - drugostupanjski",
+    "Kazneni - trećestupanjski žalbeni", "Kazneni", "Zahtjev za zaštitom prava zajamčenih Ustavom RH",
+    "Sudska uprava - županijski sud", "Parnični predmet", "Kazneni - priziv na odluke Višeg disciplinskog suda HOK",
+    "Građanski - parnični", "Građanski-parnični", "Kazneni - priziv odvjetnika",
+    "Građanski - štrajk, poništenje izbora za radničko vijeće, nezakonite radnje",
+    "Građanski - zaštita prava na suđenje u razumnom roku - žalba", "Građanski - zaštita prava na suđenje u razumnom roku - zahtjev",
+    "Upravni - zaštita prava na suđenje u razumnom roku - zahtjev", "Kazneni - pravno shvaćanje - sudska uprava",
+    "Građanski - pravno shvaćanje - sudska uprava", "Kazneni - zaštita prava na suđenje u razumnom roku - žalba",
+    "Građanski - zahtjev za jedinstvenu primjenu zakona u građanskim stvarima", "Prekršajni postupak – izavnredni pravni lijekovi",
+    "Radni spor – revizija", "Radni spor – drugostupanjski", "Građanski - drugostupanjski žalbeni",
+    "Građanski - zaštita zakonitosti u upravnim predmetima", "Nepoznato", "Građanski - revizija (predmeti stariji od 10 godina)",
+    "Kazneni - vijeća za izvršenje kazne zatvora", "Građanski - naknada štete",
+    "Kazneni - zahtjev za jedinstvenu primjenu zakona u kaznenim stvarima", "Istražni predmet - razno",
+    "Građanski - razno - pismena", "Kazneni - drugostupanjski predmeti iz čl. 21. Zakona o USKOK-u",
+    "Građanski - drugostupanjski - zemljišnoknjižni", "Građanski - zaštita prava na suđenje u razumnom roku",
+    "Građanski - drugostupanjski - mediji (tisak)", "Građanski - izvanparnični", "Kazneni - optužno vijeće",
+    "Građanski - ovrha", "Građanski - najam stanova", "Izvanraspravno kazneno vijeće - za kazneni odjel I. stupnja",
+    "Građanski - parnični predmeti", "Trgovački - stečaj", "Trgovački - predmeti proslijeđeni od javnog bilježnika po prigovoru na rješenje o ovrsi na temelju vjerodostojne isprave",
+    "Kazneni - županijski sud", "Građanski - drugostupanjski zemljišnoknjižni predmeti",
+    "Prekršajni - devizni - drugostupanjski", "Kazneni - prvostupanjski (općinski)", "Trgovački - ovrha",
+    "Upravni - Upisnik za drugostupanjske predmete povodom žalbe", "Građanski - statusni sporovi",
+    "Građanski - isplate", "Upravni - ocjena zakonitosti odluka javnopravnih tijela",
+    "Građanski - prigovor na ovrhu temeljem vjerodostojne isprave", "Upravni - upisnik za ocjenu zakonitosti pojedinačne odluke...",
+    "Upravni - ocjena zakonitosti općih akata", "Građanski - smetanje posjeda", "Kazneni - europski uhidbeni nalog (županijski)",
+    "Kazneni - europski uhidbeni nalog", "Građanski - drugostupanjski ovršni predmeti",
+    "Upravni - izvanredno preispitivanje zakonitosti pravomoćne presude upravnog i Visokog upravnog suda RH",
+    "Kazneni - prvostupanjski - odrasli počinitelj za kaznena djela na štetu djece i maloljetnika",
+    "Građanski - stambeno", "Građanski - drugi stupanj - razumni rok", "Građanski - prvi stupanj - razumni rok",
+    "Građanski - sporovi male vrijednosti", "Kazneni prvostupanjski - USKOK-a", "Građanski - obvezni",
+    "Upravni - upisnik za upravne sporove", "Građanski - mediji", "Kazneni - prvostupanjski - ratni zločin",
+    "Građanski - predmeti stariji od 15 godina", "Upravni - upisnik radnih i službeničkih sporova",
+    "Upravni - razni upravni predmeti", "Kazneni - drugostupanjski kazneni predmeti za kaznena djela kaznenopravne zaštite djece",
+    "Prekršajni - predmeti iz područja gospodarstva", "Građanski - obiteljski sporovi",
+    "Kazneni - izvanraspravno kazneno vijeće - za mladež", "Kazneni - za maloljetnike", "Građanski - ostavine",
+    "Kazneni - kaznena djela kaznenopravne zaštite djece", "Kazneni - drugostupanjski - izvanraspravno kazneno vijeće za istražne predmete i predmete općinskih sudova",
+    "Kazneni - drugostupanjski predmeti izvršavanja kazne zatvora", "Obiteljski – drugostupanjski",
+    "Građanski - radni statusni", "Građanski - isplate iz radnog odnosa", "Kazneni - prvostupanjski - maloljetnik",
+    "Trgovački - pobijanje predstečajne nagodbe", "Građanski-pomoćni upisnik za ovršne vrste postupaka",
+    "Kazneni - prvostupanjski - maloljetnici", "Upravni - upisnik predmeta iz područja mirovinskog osiguranja",
+    "Građanski - upisnik za razne građanske predmete", "Upravni - upisnik predmeta iz područja financijsko-poreznog sustava-porezi",
+    "Građanski - utvrđenje izvanbračne zajednice, oduzimanje roditeljskog prava...", "Upravni - upisnik predmeta u kojima vrijednost predmeta spora ne prelazi 100.000,00 kuna",
+    "Kazneni - drugostupanjski kazneni predmeti mlađih punoljetnika", "Upravni - upisnik predmeta iz područja graditeljstva i prostornog uređenja",
+    "Upravni - upisnik predmeta iz područja financijsko-poreznog sustava-porezni nadzori", "Upravni - upisnik predmeta iz područja zdravstvenog i socijalnog osiguranja",
+    "Upravni - upisnik predmeta javne nabave i koncesija", "Upravni - upisnik predmeta iz područja katastra",
+    "Upravni - upisnik predmeta naknade za oduzete imovine", "Upravni - upisnik predmeta iz područja financijsko-carinskog sustava",
+    "Građanski-pomoćni upisnik za ostavinske vrste postupaka", "Kazneni - upisnik za predmete po ostalim oblicima pravosudne suradnje u kaznenim stvarima s državama članica EU",
+    "Kazneni - izdane i primljene potvrde – priznanje i izvršenje odluka o novčanoj kazni između članica EU (općinski)",
+    "Kazneni - upisnik za drugostupanjske kaznene predmete ratnih zločina", "Kazneni - upisnik za drugostupanjske kaznene predmete za kaznena djela kaznenopravne zaštite djece",
+    "Kazneni - prvostupanjski - mlađi punoljetnik", "Prekršajni - žalbe na rješenja o oduzimanju predmeta, na nalog za zadržavanje i dr.",
+    "Građanski - drugostupanjski povodom žalbi na predmete europskog postupka za sporove male vrijednosti",
+    "Prekršajni - predmeti iz područja javnog reda i mira i javne sigurnosti", "Prekršajni - izvanredno ublažavanje kazne",
+    "Kazneni - izdane i primljene potvrde – priznanje i izvršenje odluka o novčanoj kazni između članica EU (županijski)",
+    "Kazneni - upisnik za predmete iz članka 21. Zakona o USKOK-u za izvanraspravno vijeće", "Kazneni - upisnik priziva na odluke Višeg disciplinskog suda HOK",
+    "Građanski-upisnik za ovrhu po Obiteljskom zakonu", "Prekršajni - predmeti iz područja sigurnosti prometa na cestama i prijevoza",
+    "Kazneni - upisnik odluka drugostupanjskog disciplinskog vijeća za javne bilježnike", "Kazneni-upisnik za predmete iz članka 21. Zakona o USKOK-u za izvanraspravno vijeće",
+    "Kazneni - upisnik za drugostupanjske kaznene predmete iz članka 21. Zakona o USKOK-u", "Upravni - upisnik predmeta izvlaštenja-izvlaštenje, deposedacija, eksproprijacija",
+    "Građanski - predmeti prema Zakonu o zaštiti osoba s duševnim smetnjama", "Prekršajni - predmeti iz područja financija",
+    "Prekršajni - pomoćni upisnik za predmete iz područja sigurnosti prometa na cestama", "Građanski - prijedlog za dopuštenje revizije",
+    "Građanski - ogledni postupak", "Građanski-upisnik za stečaj potrošača", "Izvršenje kazni",
+    "Prekršajni - povodom žalbi - o priznavanju i izvršenju odluka o novčanoj kazni između članica EU",
+    "Upravi - upisnik za sklapanja, raskidanja i izvršavanje ...", "Upisnik za prekršajni postupak",
+    "Prekršajni upisnik za drugostupanjske predmete", "Kazneni - postupak prenošenja nadležnosti i rješavanje sukoba nadležnosti",
+    "Kazneni - drugostupanjski žalbeni na uvjetne otpuste", "Kazneni - drugostupanjski žalbeni europski uhidbeni nalog",
+    "Kazneni - drugostupanjski žalbeni istražni zatvori iz čl. 21. Zakona o USKOK-u", "Obiteljski – drugostupanjski",
+    "Kazneni - drugostupanjski žalbeni na maloljetnike", "Prekršajni - izdane i primljene potvrde u svrhu priznanja i izvršenja odluka o novčanoj kazni između članica EU",
+    "Prekršajni - razni prekršajni zahtjevi", "Kazneni - drugostupanjski žalbeni po ostalim oblicima pravosudne suradnje u kaznenim stvarima s državama članicama EU",
+    "Kazneni - drugostupanjski žalbeni iz čl. 21. Zakona o USKOK-u", "Upravni - upisnik za izvršenje sudskih odluka",
+    "Kazneni - drugostupanjski žalbeni za kaznena djela kaznenopravne zaštite djece", "Kazneni - drugostupanjski žalbeni ratni zločin",
+    "Kazneni - upisnik drugostupanjskog državnoodvjetničkog stegovnog vijeća", "Trgovački - ovrha temeljem vjerodostojne isprave",
+    "Upravni - upisnik za ocjenu zakonitosti postupanja jav.prav.", "Građanski - platni nalog",
+    "Prekršajni - razni prekršajni predmeti", "Trgovački - Upisnik za žalbe protiv rješenja u skraćenom stečajnom postupku",
+    "Trgovački - upisnik za predmete ovrhe i osiguranja na temelju odluka donesenih u državama članicama Europske unije",
+    "Trgovački - upisnik za predmete europskog platnog naloga i europskog postupka za sporove male vrijednosti",
+    "Građanski - upisnik za izdavanje potvrda, priznanje i ovrhu sudskih odluka iz država članica Europske unije",
+    "Kazneni - povodom žalbe na rješenje u istrazi", "Prekršajni - predmeti izvršenja prekršajnih sankcija",
+    "Građanski - predmeti mirenja", "Upisnik za predmete europskog platnog naloga i europskog postupka za sporove male vrijednosti",
+    "Upravni spor – izvanredni pravni lijekovi", "Radni spor – prvostupanjski", "Trgovački – izvanparnični",
+    "Obiteljski – izvanparnični", "Građanski - izvanredno preispitivanje - upravni postupak",
+    "Građanski - drugostupanjski radni predmeti", "Građanski-upisnik za drugostupanjske obiteljske predmete",
+    "Kazneni - predmeti izvršavanja kazne zatvora za kaznena djela kaznenopravne zaštite djece",
+    "Građanski-pomoćni upisnik za parnične vrste postupaka"
+]
+
+DOZVOLJENA_PODRUCJA_PRAVA = [
+    "010101 Trgovačka društva, osnivanje i statusne promjene", "010102 Sudski registar, upis i promjene", "010103 Predstavništva inozemnih trgovačkih društava", "010104 Preuzimanje dioničkih društava", "010105 Poslovna tajna", "010106 Stečaj i predstečajna nagodba", "010201 Obrt", "010202 Zadruge", "010301 Sloboda pružanja usluga", "010302 Zaštita tržišnog natjecanja", "010303 Mjere kontrole cijena", "010401 Financijsko poslovanje", "010501 Elektronički potpis, elektronička isprava", "010601 Poticanje gospodarstva, ulaganja, izvoza, inovacija i dr. gospodarske mjere", "010701 Poduzetnička infrastruktura", "010801 Komore (Hrvatska gospodarska komora, Hrvatska obrtnička komora)", "020101 Radni odnosi (ugovor o radu, pravilnik o radu, plaća i dr.)", "020201 Državni službenici i službenici i namještenici u tijelima jedinica lokalne i područne (regionalne) samouprave", "020202 Državni (stručni) ispit", "020203 Plaće, naknade i materijalna prava u javnom sektoru", "020301 Prava radnika u slučaju stečaja poslodavca", "020401 Zaštita života i zdravlja na radu", "020402 Zaštita prijavitelja nepravilnosti, zaštita dostojanstva", "020501 Kolektivni ugovori", "020502 Sindikati, udruge poslodavaca", "020601 Volonterstvo", "020701 Posredovanje pri zapošljavanju, profesionalna rehabilitacija", "020801 Obvezno mirovinsko osiguranje, mirovine", "030101 Obvezni odnosi, zatezne kamate", "030102 Posebna odgovornost RH za štetu", "030103 Mjenica, ček", "030201 Vlasništvo i druga stvarna prava, izvlaštenje i komasacija", "030301 Ovršni postupak", "040101 Autorsko i srodna prava", "040201 Patenti, žigovi, industrijski dizajn i dr.", "040301 Naknade u području intelektualnog vlasništva", "050101 Platni promet", "050102 Sprječavanje pranja novca", "050103 Financijski inspektorat", "050104 Financijska agencija (FINA)", "050105 Zaštita u poslovanju s gotovim novcem i vrijednostima", "050106 Devizno poslovanje", "050201 Računovodstvo poduzetnika i neprofitnih organizacija", "050202 Revizija financijskih izvještaja društava i drugi poslovi revizije", "050301 Porezi i porezni sustav općenito", "050302 Porez na dohodak, paušalno oporezivanje djelatnosti", "050303 Porez na dodanu vrijednost, trošarine", "050304 Porez na promet nekretnina", "050305 Porez na dobit", "050306 Lokalni porezi (županijski, gradski i općinski porezi)", "050307 Porezna uprava", "050308 Porezno savjetništvo", "050401 Doprinosi za financiranje obveznih osiguranja", "050501 Carinski propisi", "050502 Carinska služba", "050503 Slobodne zone, zastupanje u carinskom postupku", "050504 Posebne pristojbe na uvezenu robu", "060101 Normizacija, akreditacija", "060102 Mjeriteljstvo", "060201 Tehnički zahtjevi za proizvode", "060202 Nadzor predmeta od plemenitih kovina", "060301 Opća sigurnost proizvoda", "060302 Zdravstvena ispravnost predmeta opće uporabe", "060401 Inspekcije (osim građevinske, upravne, prosvjetne i sportske inspekcije, inspekcije cesta i cestovog prometa i financijskog inspektorata)", "070101 Poljoprivreda i ruralni razvoj, općenito", "070201 Potpore poljoprivredi, ruralnom razvoju i ribarstvu", "070301 Biljna proizvodnja, biljno zdravstvo, GMO", "070401 Vinogradarstvo, vinarstvo", "070501 Gnojiva i poboljšivači tla", "070601 Stočarstvo, zaštita životinja, zoo vrtovi", "070602 Veterinarstvo, veterinarski proizvodi", "070701 Ekološka proizvodnja, oznake izvornosti, zemljopisnog podrijetla i tradicionalnih specijaliteta", "070702 Sigurnost i standardi u proizvodnji hrane", "070801 Šumarstvo", "070901 Divljač - uzgoj, zaštita, lov i korištenje", "070902 Ribarstvo - morsko i slatkovodno", "080101 Rudarstvo i geološka istraživanja", "080201 Ugljikovodici - istraživanje i eksploatacija", "080301 Energija, općenito", "080302 Obnovljivi izvori energije, kogeneracija", "080303 Nafta, plin", "080401 Industrija, općenito", "090101 Održivi razvitak", "090201 Zaštita okoliša", "090202 Zaštita prirode", "090203 Zaštita od štetnog utjecaja kemikalija i biocidnih pripravaka", "090204 Zaštita od buke i svjetlosnog onečišćenja", "090205 Zaštita od eksplozija", "090206 Zaštita od elementarnih nepogoda, hidrometeorološki i seizmološki poslovi", "090301 Vode i vodno gospodarstvo", "090302 Komunalno gospodarstvo, komunalni red", "090303 Gospodarenje otpadom", "100101 Prostorno uređenje i gradnja", "100201 Obnova", "110101 Katastar nekretnina, geodetska djelatnost", "110102 Zemljišne knjige", "110201 Stanovanje, poslovni prostori", "110202 Posredovanje u prometu nekretnina", "110203 Procjena vrijednosti nekretnina", "120101 Trgovina na domaćem tržištu i s inozemstvom", "120201 Elektronička trgovina", "120301 Zaštita potrošača, potrošačko kreditiranje", "130101 Promet općenito", "130201 Pomorsko dobro, morske luke", "130202 Pomorski promet, lučke kapetanije", "130301 Unutarnja plovidba", "130401 Hrvatski registar brodova", "130501 Hidrografska djelatnost", "130601 Zračne luke i zračni promet", "130701 Željeznice i željeznički promet", "130801 Žičare", "130901 Javne i nerazvrstane ceste", "130902 Prijevoz putnika i tereta u cestovnom prometu", "130903 Sigurnost prometa na cestama, homologacija vozila, HAK", "131001 Poštanske i kurirske usluge", "140101 Ugostiteljstvo", "140201 Turizam", "150101 Elektroničke komunikacije, IKT", "150201 Digitalni sadržaji i usluge", "150301 Zaštita osobnih podataka (GDPR)", "160101 Hrvatska narodna banka", "160102 Banke, kreditne institucije", "160201 Leasing", "160202 Faktoring", "160301 Društva za osiguranje, poslovi osiguranja", "160302 Obvezna osiguranja u prometu", "160401 Mirovinski fondovi, mirovinska osiguravajuća društva, dokup mirovine, REGOS", "160501 Investicijski fondovi i društva za upravljanje", "160502 Novčani fondovi", "160503 Privatizacijski investicijski fondovi i ostali investicijski fondovi", "160601 Tržište kapitala (burza) i tržište novca", "160701 Nadzor financijskih usluga i društava (HANFA)", "170101 Obrazovanje i znanost, općenito", "170201 Predškolski odgoj i obrazovanje", "170301 Školstvo i obrazovanje, općenito", "170401 Osnovno, srednje, srednje strukovno i umjetničko obrazovanje", "170501 Obrazovanje odraslih", "170601 Visoko obrazovanje i znanost", "170701 Obrazovne kvalifikacije", "170801 Ostale djelatnosti i područja u obrazovanju", "180101 Kultura i umjetnost, općenito", "180102 Kulturna dobra", "180103 Arhivi", "180104 Knjižnice", "180105 Muzeji", "180106 Kazališta", "180107 Audiovizualne djelatnosti", "180201 Sport", "180301 Igre na sreću i nagradne igre", "180401 Mediji, općenito", "180402 Elektronički mediji", "190101 Zdravstvena zaštita, općenito", "190102 Zaštita od zaraznih bolesti", "190103 Zaštita pacijenata, zaštita zdravstvenih podataka", "190104 Prevencija bolesti i ovisnosti", "190201 Djelatnosti u zdravstvu, opće odredbe", "190202 Stomatološka djelatnost", "190203 Fizioterapeutska djelatnost", "190204 Psihološka djelatnost i djelatnosti psihoterapije", "190205 Medicinsko-biokemijska djelatnost", "190206 Transfuzijska djelatnost", "190207 Hitna medicina", "190208 Primjena ljudskih tkiva i stanica", "190209 Presađivanje ljudskih organa", "190210 Medicinski pomognuta oplodnja", "190211 Ostale djelatnosti i područja u zdravstvu", "190301 Liječništvo", "190302 Sestrinstvo", "190303 Primaljstvo", "190401 Zdravstvene ustanove", "190501 Obvezno i dobrovoljno zdravstveno osiguranje", "190601 Ljekarništvo, lijekovi", "190602 Medicinski proizvodi", "190701 Socijalna skrb i rad, općenito", "190702 Prognanici, povratnici i izbjeglice", "190703 Branitelji, invalidi rata, nestale osobe", "190704 Humanitarna pomoć i solidarnost", "190705 Edukacijsko-rehabilitacijska djelatnost", "190706 Udomiteljstvo", "190707 Novčane naknade i prava rodilja, roditelja, djece i omladine, zaslužnih osoba", "190708 Prava osoba s invaliditetom i djece s poteškoćama u razvoju", "190709 Djelatnost dadilje", "200101 Nacionalna sigurnost RH, općenito", "200201 Obrana", "200202 Oružje i vojna oprema", "200301 Policija", "200302 Državna granica", "200401 Sigurnosno-obavještajni sustav", "200402 Tajnost podataka, informacijska sigurnost", "200501 Radiološka i nuklearna sigurnost", "200601 Zaštita od požara, vatrogastvo", "200701 Hrvatska gorska služba spašavanja", "200801 Privatna zaštita osoba i imovine, detektivska djelatnost", "210101 Ustanove, općenito", "210201 Udruge i civilno društvo", "210301 Političke stranke", "210401 Vjerske zajednice", "210501 Zaklade", "220101 Ustav RH i ljudska prava", "220102 Ustavni sud", "220103 Konvalidacija i ništetnost pravnih propisa", "220104 Državna znamenja, odlikovanja i priznanja", "220105 Domovinski rat", "220106 Računanje vremena", "220107 Javno okupljanje, građanska inicijativa", "220108 Nacionalne manjine", "220109 Izborni sustav", "220201 Predsjednik RH", "220202 Vlada RH", "220203 Hrvatski sabor", "220301 Državna uprava, općenito", "220302 Pečati i žigovi", "220303 Upravna inspekcija", "220304 Službena statistika", "220401 Lokalna i područna (regionalna) samouprava, općenito", "220402 Potpomognuta područja, razvojne posebnosti", "220501 Strateško planiranje i upravljanje razvojem RH", "220601 Dužnosnici, saborski zastupnici", "220701 Državna imovina (dionice, nekretnine i dr.)", "220702 Javno-privatno partnerstvo", "220703 Koncesije", "220801 Pravo na pristup informacijama", "230101 Državni proračun, proračunsko računovodstvo", "230102 Izvršavanje Državnog proračuna - Državni zajmovi i krediti (zaduživanje i otplata)", "230201 Državne potpore, općenito", "230301 Javna nabava", "230401 Robne zalihe RH", "230501 Unutarnja kontrola i revizija u javnom sektoru, državna revizija", "240101 Pravosuđe, općenito", "240201 Sudovi, komunikacija sa sudovima", "240202 Sudske pristojbe", "240301 Državno odvjetništvo, USKOK, sprječavanje korupcije", "240401 Pravobraniteljstvo", "240501 Javno bilježništvo", "240502 Javnobilježničke pristojbe i tarifa", "240601 Odvjetništvo", "250101 Državljanstvo, javne isprave", "250102 Stranci u RH, azil", "250201 Upravni postupak", "250202 Upravni spor", "250203 Upravne pristojbe", "250301 Nasljeđivanje", "250401 Obiteljsko pravo, zaštita od nasilja", "250402 Životno partnerstvo", "250501 Parnični postupak", "250601 Arbitraža, mirenje", "250701 Kazneno pravo, postupak i oprost", "250702 Kaznene sankcije, izvršavanje", "250801 Prekršaji i prekršajni postupak", "250901 Kolizijski propisi, mjerodavno pravo", "260101 Vanjski poslovi, diplomatska i konzularna predstavništva", "260201 Europska unija i RH", "260301 Međunarodna suradnja RH", "260401 Hrvati izvan RH", "270101 Međunarodne organizacije (Međunarodno pravo)", "270201 Međunarodni ugovori (Međunarodno pravo)", "270301 Sukcesija država i ugovora (Međunarodno pravo)", "270401 Lokalna samouprava (Međunarodno pravo)", "270501 Diplomatski i konzularni odnosi (Međunarodno pravo)", "270502 Zaštita klasificiranih podataka (Međunarodno pravo)", "270601 Granice, vize, prihvat i predaja osoba (Međunarodno pravo)", "270701 Rad, zapošljavanje (Međunarodno pravo)", "270702 Socijalno osiguranje (Međunarodno pravo)", "270801 Gospodarska suradnja, općenito (Međunarodno pravo)", "270802 Industrija, energetika, resursi (Međunarodno pravo)", "270803 Poljoprivreda, šumarstvo i ribarstvo (Međunarodno pravo)", "270804 Turizam (Međunarodno pravo)", "270805 Trgovina i carine (Međunarodno pravo)", "270901 Tehnički propisi (Međunarodno pravo)", "271001 Promet, općenito (Međunarodno pravo)", "271002 Željeznički promet (Međunarodno pravo)", "271003 Cestovni promet (Međunarodno pravo)", "271004 Pomorski i riječni promet, more (Međunarodno pravo)", "271005 Zračni promet (Međunarodno pravo)", "271006 Svemirsko pravo (Međunarodno pravo)", "271007 Pošta i komunikacije (Međunarodno pravo)", "271101 Zaduživanje, tehnička i financijska pomoć (Međunarodno pravo)", "271102 Oporezivanje, platni sporazumi (Međunarodno pravo)", "271103 Ulaganja (Međunarodno pravo)", "271201 Zdravlje (Međunarodno pravo)", "271301 Obrazovanje, kultura, znanost, tehnologija, sport (Međunarodno pravo)", "271401 Zaštita okoliša (Međunarodno pravo)", "271402 Meterologija, prirodne i civilizacijske katastrofe (Međunarodno pravo)", "271501 Mirno rješavanje sporova (Međunarodno pravo)", "271502 Rat i obrana, vojna suradnja, humanitarno pravo (Međunarodno pravo)", "271601 Ljudska prava, manjine (Međunarodno pravo)", "271701 Građanskopravni status i odnosi, obitelj (Međunarodno pravo)", "271801 Intelektualno vlasništvo (Međunarodno pravo)", "271901 Kaznena djela, policijska suradnja (Međunarodno pravo)", "272001 Pravna pomoć i suradnja, izručenje, sudske odluke (Međunarodno pravo)", "00 Nedefinirano", "250502 Izvanparnični postupak", "190801 Demografija"
+]
+
+DOZVOLJENI_GRADOVI = [
+    "Bjelovar", "Crikvenica", "Dubrovnik", "Đakovo", "Gospić", "Karlovac", "Koprivnica", "Kutina", "Makarska", "Metković", "Novi Zagreb", "Osijek", "Pazin", "Požega", "Rijeka", "Sesvete", "Pula", "Sisak", "Slavonski Brod", "Split", "Šibenik", "Varaždin", "Velika Gorica", "Vukovar", "Vinkovci", "Virovitica", "Zadar", "Zlatar", "Strasbourg", "Luxembourg", "Nedefinirano", "Zabok", "Zaprešić", "Zagreb", "Imotski", "Buje", "Korčula", "Krapina", "Našice", "Sinj", "Novom Zagrebu", "Bjelovaru", "Crikvenici", "Dubrovniku", "Gospiću", "Karlovcu", "Koprivnici", "Kutini", "Makarskoj", "Metkoviću", "Osijeku", "Pazinu", "Požegi", "Puli", "Rijeci", "Sesvetama", "Sisku", "Slavonskom Brodu", "Splitu", "Varaždinu", "Velikoj Gorici", "Vinkovcima", "Virovitici", "Vukovaru", "Zadru", "Zlataru", "Čakovec", "Čakovcu", "Đakovu", "Šibeniku", "Zagrebu", "Čazma", "Daruvar", "Garešnica", "Grubišno polje", "Križevci", "Pakrac", "Krk", "Rab", "Senj", "Prelog", "Blato", "Lastovo", "Gračac", "Otočac", "Duga Resa", "Ogulin", "Slunj", "Đurđevac", "Novska", "Ploče", "Vrgorac", "Jastrebarsko", "Samobor", "Beli Manastir", "Donji Miholjac", "Valpovo", "Labin", "Poreč", "Umag", "Rovinj", "Delnice", "Mali Lošinj", "Opatija", "Dugo Selo", "Sveti Ivan Zelina", "Vrbovec", "Glina", "Hrvatska Kostajnica", "Petrinja", "Nova Gradiška", "Stari Grad", "Supetar", "Trogir", "Knin", "Ivanec", "Novi Marof", "Ivanić Grad", "Županja", "Slatina", "Benkovac", "Biograd na Moru", "Pag", "Donja Stubica", "Klanjec"
+]
+
+MJESECI = {
+    "1": "Siječanj", "2": "Veljača", "3": "Ožujak", "4": "Travanj",
+    "5": "Svibanj", "6": "Lipanj", "7": "Srpanj", "8": "Kolovoz",
+    "9": "Rujan", "10": "Listopad", "11": "Studeni", "12": "Prosinac",
+    "01": "Siječanj", "02": "Veljača", "03": "Ožujak", "04": "Travanj",
+    "05": "Svibanj", "06": "Lipanj", "07": "Srpanj", "08": "Kolovoz",
+    "09": "Rujan"
+}
+
+UPUTE_ZA_GEMINI = f"""
+Ti si stručni pravni asistent urednika portala sudske prakse.
+Tvoj zadatak je analizirati tekst sudske presude i vratiti JSON sa sljedećim ključevima:
+- "broj_odluke": Poslovni broj odluke iz teksta.
+- "vrsta_odluke": Smiješ koristiti SAMO jednu od ovih opcija: {DOZVOLJENE_VRSTE_ODLUKA}
+- "vrsta_postupka": Smiješ koristiti SAMO jednu od ovih opcija, prepoznaj točan oblik: {DOZVOLJENE_VRSTE_POSTUPAKA}
+- "naziv_suda": Točan naziv suda kako stoji u zaglavlju.
+- "grad": Prepoznaj grad u kojem se nalazi sud prema zaglavlju presude (npr. 'Općinski sud u Šibeniku' -> 'Šibenik'). Smiješ koristiti SAMO jednu opciju s ovog popisa: {DOZVOLJENI_GRADOVI}
+- "ecli": ECLI broj, ako izričito postoji u tekstu. Ako ne postoji, ostavi prazno.
+- "podrucje_prava": Smiješ koristiti SAMO jednu od ovih opcija: {DOZVOLJENA_PODRUCJA_PRAVA}
+- "kljucne_rijeci": Ključni pravni pojmovi odvojeni zarezom (npr. 'nedozvoljene igre na sreću, oduzimanje predmeta').
+- "sazetak": Vrlo detaljan i stručan pravni sažetak. Mora uključivati: tko je i zašto proglašen krivim/oslobođenim, točan opis radnje/spora, izrečenu sankciju (npr. uvjetna osuda, kazna zatvora) i sporedne mjere (npr. oduzimanje predmeta).
+"""
+
+
+# ==========================================
+# 2. OBRADA PREKO UMJETNE INTELIGENCIJE
+# ==========================================
+
+def analiziraj_presudu(tekst_presude):
+    print("Šaljem presudu Gemini modelu na analizu...")
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-pro",
+        system_instruction=UPUTE_ZA_GEMINI,
+        generation_config={"response_mime_type": "application/json"}
+    )
+
+    odgovor = model.generate_content(tekst_presude)
+    podaci = json.loads(odgovor.text)
+
+    podaci["naslov"] = podaci.get("broj_odluke", "")
+    return podaci
+
+
+# ==========================================
+# 3. KONTROLE ZA LING.HR
+# ==========================================
+
+def upisi_tekst(page, selektor, tekst):
+    """Upisuje tekst u standardno input/textarea polje."""
+    if tekst:
+        try:
+            polje = page.locator(selektor)
+            polje.fill(tekst)
+            page.keyboard.press("Tab")
+            time.sleep(0.3)
+        except Exception as e:
+            print(f"  [!] Greška pri unosu teksta u {selektor}: {e}")
+
+
+def unesi_datum(page, naziv_polja, datum_string):
+    """
+    Popunjava datum putem react-datepicker komponente.
+
+    HTML struktura datumskog polja:
+      div (kontejner)
+        div (zaglavlje - klikabilno, sadrži label + SVG ikonu)
+          div "Datum odluke"   ← label
+          div                  ← prikaz odabranog datuma
+          svg                  ← ikona kalendara
+        div (popup s kalendarom)
+          div.react-datepicker
+            div[width="100px"]  ← trigger za godinu
+            div[width="130px"]  ← trigger za mjesec
+            div.react-datepicker__day ← dani
+    """
+    if not datum_string:
+        return
+    try:
+        dijelovi = datum_string.strip('.').split('.')
+        if len(dijelovi) != 3:
+            print(f"  [!] Neispravan format datuma: {datum_string}")
+            return
+
+        dan = str(int(dijelovi[0].strip()))
+        mjesec = dijelovi[1].strip()
+        godina = dijelovi[2].strip()
+        naziv_mjeseca = MJESECI.get(mjesec)
+
+        if not naziv_mjeseca:
+            print(f"  [!] Nepoznat mjesec: {mjesec}")
+            return
+
+        print(f"  -> Odabirem u kalendaru: {dan}. {naziv_mjeseca} {godina}. (za polje '{naziv_polja}')")
+
+        # 1. Klik na zaglavlje datumskog polja (parent div labela) da se otvori kalendar
+        zaglavlje = page.locator(
+            f'xpath=//div[text()="{naziv_polja}"]/parent::div'
+        ).first
+        zaglavlje.click(force=True)
+        time.sleep(1)
+
+        # 2. Pronađi react-datepicker unutar najbližeg ancestor kontejnera
+        kalendar = page.locator(
+            f'xpath=//div[text()="{naziv_polja}"]'
+            f'/ancestor::div[.//div[contains(@class,"react-datepicker")]][1]'
+        ).first.locator('.react-datepicker').first
+        kalendar.wait_for(state="visible", timeout=5000)
+
+        # 3. Odaberi godinu - klik na dropdown trigger (width="100px")
+        kalendar.locator('div[width="100px"]').first.click(force=True)
+        time.sleep(0.5)
+
+        god_opcija = kalendar.locator(f'div.css-114bz43[title="{godina}"]').first
+        god_opcija.scroll_into_view_if_needed()
+        time.sleep(0.2)
+        god_opcija.click(force=True)
+        time.sleep(0.5)
+
+        # 4. Odaberi mjesec - klik na dropdown trigger (width="130px")
+        kalendar.locator('div[width="130px"]').first.click(force=True)
+        time.sleep(0.5)
+
+        mj_opcija = kalendar.locator(f'div.css-114bz43[title="{naziv_mjeseca}"]').first
+        mj_opcija.scroll_into_view_if_needed()
+        time.sleep(0.2)
+        mj_opcija.click(force=True)
+        time.sleep(0.5)
+
+        # 5. Odaberi dan - iteriraj po danima koji NISU outside-month
+        dani = kalendar.locator(
+            '.react-datepicker__day:not(.react-datepicker__day--outside-month)'
+        ).all()
+        dan_kliknut = False
+        for d in dani:
+            if d.inner_text().strip() == dan:
+                d.click(force=True)
+                dan_kliknut = True
+                break
+
+        if not dan_kliknut:
+            print(f"  [!] Dan {dan} nije pronađen u kalendaru za {naziv_polja}")
+
+        time.sleep(0.5)
+
+    except Exception as e:
+        print(f"  [!] Greška pri unosu datuma {datum_string} za {naziv_polja}: {e}")
+        page.keyboard.press("Escape")
+        time.sleep(0.3)
+
+
+def odaberi_iz_padajuceg_izbornika(page, naziv_polja, trazena_vrijednost):
+    """
+    Odabire vrijednost iz custom dropdown izbornika.
+
+    HTML struktura:
+      div.e1xea2lb14 (wrapper)
+        div.e1xea2lb13 (inner wrapper)
+          div.e1xea2lb4  "Vrsta odluke"       ← label
+          div.e1xea2lb11                       ← trigger (sadrži SVG strelicu)
+            div.e1xea2lb10                     ← prikaz odabrane vrijednosti
+            svg                                ← strelica
+          div.e1xea2lb7                        ← lista opcija
+            div.css-114bz43[title="..."]       ← pojedina opcija
+    """
+    if not trazena_vrijednost:
+        return
+    try:
+        print(f"  -> Biram iz izbornika '{naziv_polja}': {trazena_vrijednost}")
+
+        # Klik na trigger div (sibling labela koji sadrži SVG strelicu)
+        trigger = page.locator(
+            f'xpath=//div[text()="{naziv_polja}"]'
+            f'/following-sibling::div[*[local-name()="svg"]]'
+        ).first
+        trigger.click(force=True)
+        time.sleep(1)
+
+        # Pronađi opciju po title atributu
+        opcija = page.locator(f'div.css-114bz43[title="{trazena_vrijednost}"]')
+
+        if opcija.count() > 0:
+            opcija.first.wait_for(state="visible", timeout=3000)
+            opcija.first.scroll_into_view_if_needed()
+            time.sleep(0.2)
+            opcija.first.click(force=True)
+            time.sleep(0.5)
+        else:
+            print(f"  [!] Opcija '{trazena_vrijednost}' nije pronađena u izborniku '{naziv_polja}'.")
+            page.keyboard.press("Escape")
+            time.sleep(0.3)
+
+    except Exception as e:
+        print(f"  [!] Greška za padajući izbornik '{naziv_polja}': {e}")
+        page.keyboard.press("Escape")
+        time.sleep(0.3)
+
+
+def odaberi_checkbox_podrucje_prava(page, trazena_vrijednost):
+    """
+    Označava checkbox u izborniku "Područje prava".
+
+    HTML struktura stavke:
+      div.css-1rx2okj.e1xea2lb6 (red s checkboxom)
+        input[type="checkbox"]
+        div.css-1d193z1.e1xea2lb5 "180301 Igre na sreću..."  ← label
+
+    NAPOMENA: Ovaj dropdown NEMA polje za pretraživanje/filtriranje.
+    Stari pristup s keyboard.type() ne radi jer nema input polja za filtar.
+    Novi pristup: direktno pronađi element po tekstu i klikni.
+    """
+    if not trazena_vrijednost:
+        return
+    try:
+        print(f"  -> Označavam područje prava: {trazena_vrijednost}")
+
+        # 1. Otvori dropdown klikom na trigger
+        trigger = page.locator(
+            'xpath=//div[text()="Područje prava"]'
+            '/following-sibling::div[*[local-name()="svg"]]'
+        ).first
+        trigger.click(force=True)
+        time.sleep(1)
+
+        # 2. Pronađi opcije kontejner (treći sibling - lista opcija)
+        opcije_kontejner = page.locator(
+            'xpath=//div[text()="Područje prava"]'
+            '/following-sibling::div[contains(@class, "e1xea2lb7")]'
+        ).first
+
+        # 3. Pronađi checkbox label s točnim tekstom i klikni
+        opcija = opcije_kontejner.locator(
+            f'div.css-1d193z1:text-is("{trazena_vrijednost}")'
+        )
+
+        if opcija.count() > 0:
+            opcija.first.scroll_into_view_if_needed()
+            time.sleep(0.3)
+            opcija.first.click(force=True)
+            time.sleep(0.5)
+        else:
+            # Fallback: pokušaj s get_by_text (parcijalno podudaranje)
+            opcija_fb = opcije_kontejner.get_by_text(trazena_vrijednost, exact=False)
+            if opcija_fb.count() > 0:
+                opcija_fb.first.scroll_into_view_if_needed()
+                time.sleep(0.3)
+                opcija_fb.first.click(force=True)
+                time.sleep(0.5)
+            else:
+                print(f"  [!] Područje prava '{trazena_vrijednost}' nije pronađeno.")
+
+        # 4. Zatvori dropdown
+        page.keyboard.press("Escape")
+        time.sleep(0.3)
+
+    except Exception as e:
+        print(f"  [!] Greška pri odabiru područja prava: {e}")
+        page.keyboard.press("Escape")
+        time.sleep(0.3)
+
+
+def popuni_lexical_editor(page, tekst):
+    """
+    Upisuje tekst u Lexical rich-text editor (#editor-output).
+
+    Lexical koristi contenteditable div i upravlja vlastitim stanjem.
+    Playwright-ov .fill() ne aktivira Lexical-ove interne handlere.
+
+    Koristimo document.execCommand('insertText') koji generira
+    beforeinput event - Lexical ga pravilno obrađuje.
+
+    Za duže tekstove s više redova, svaki red ubacujemo zasebno
+    s insertParagraph između njih.
+    """
+    if not tekst:
+        return
+    try:
+        print("  -> Upisujem tekst presude u editor...")
+
+        editor = page.locator('#editor-output')
+        editor.click(force=True)
+        time.sleep(0.5)
+
+        # Obriši postojeći sadržaj
+        page.keyboard.press("Control+A")
+        time.sleep(0.2)
+        page.keyboard.press("Backspace")
+        time.sleep(0.3)
+
+        # Ubaci tekst putem execCommand koji Lexical pravilno procesira
+        page.evaluate('''(text) => {
+            const el = document.querySelector('#editor-output');
+            el.focus();
+            document.execCommand('selectAll', false, null);
+            document.execCommand('delete', false, null);
+
+            const lines = text.split('\\n');
+            for (let i = 0; i < lines.length; i++) {
+                if (i > 0) {
+                    document.execCommand('insertParagraph', false, null);
+                }
+                if (lines[i].length > 0) {
+                    document.execCommand('insertText', false, lines[i]);
+                }
+            }
+        }''', tekst)
+
+        time.sleep(0.5)
+        print("  -> Tekst uspješno unesen u editor.")
+
+    except Exception as e:
+        print(f"  [!] Greška pri unosu teksta u editor: {e}")
+        # Fallback: pokušaj s clipboard paste eventom
+        try:
+            print("  -> Pokušavam fallback metodu (ClipboardEvent paste)...")
+            page.evaluate('''(text) => {
+                const el = document.querySelector('#editor-output');
+                el.focus();
+                const dt = new DataTransfer();
+                dt.setData('text/plain', text);
+                const pasteEvent = new ClipboardEvent('paste', {
+                    clipboardData: dt,
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true
+                });
+                el.dispatchEvent(pasteEvent);
+            }''', tekst)
+            time.sleep(0.5)
+        except Exception as e2:
+            print(f"  [!] Fallback metoda također nije uspjela: {e2}")
+
+
+# ==========================================
+# 4. GLAVNI ROBOT
+# ==========================================
+
+def glavni_proces():
+    url_pretrage_sudova = "https://odluke.sudovi.hr/Document/DisplayList?q=zakon%20o%20igrama%20na%20sre%C4%87u&sort=dat&prm=pravomocna"
+    url_ling_editora = "https://ling.hr/backoffice/jurisprudence/add/step-one"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False, slow_mo=50)
+        context = browser.new_context()
+        context.grant_permissions(['clipboard-read', 'clipboard-write'])
+        page = context.new_page()
+
+        print("Otvaram ling.hr. Molim Vas, prijavite se ako već niste. Imate 15 sekundi...")
+        page.goto("https://ling.hr")
+        time.sleep(15)
+
+        # --- KORAK A: Prikupljanje linkova ---
+        print("Spajam se na e-Sudove i tražim sve presude...")
+        page.goto(url_pretrage_sudova)
+
+        sve_veze = []
+        broj_stranice = 1
+
+        while True:
+            page.wait_for_selector('.search-result')
+            time.sleep(2)
+
+            elementi_presuda = page.locator('a.search-result').all()
+            for el in elementi_presuda:
+                href = el.get_attribute('href')
+                if href:
+                    sve_veze.append("https://odluke.sudovi.hr" + href)
+
+            print(f"Prikupljena {broj_stranice}. stranica (Trenutno linkova: {len(sve_veze)})")
+
+            next_btn = page.locator('a[aria-label="Next"]')
+            if next_btn.count() > 0:
+                roditelj_li = next_btn.locator('xpath=..')
+                klase_roditelja = roditelj_li.get_attribute('class') or ""
+                if "disabled" in klase_roditelja:
+                    break
+                else:
+                    next_btn.click(force=True)
+                    broj_stranice += 1
+            else:
+                break
+
+        # TESTIRANJE: Samo prva presuda
+        sve_veze = sve_veze[:1]
+        print(f"Pronađeno UKUPNO presuda za obradu: {len(sve_veze)}")
+
+        # --- KORAK B: Obrada ---
+        for redni_broj, link in enumerate(sve_veze, 1):
+            try:
+                print(f"\n{'='*60}")
+                print(f"[{redni_broj}/{len(sve_veze)}] Otvaram presudu: {link}")
+                page.goto(link)
+
+                page.wait_for_selector('.decision-text')
+
+                datum_odluke = ""
+                try:
+                    datum_odluke = page.locator(
+                        '.metadata-item[data-metadata-type="decision-date"] .metadata-content'
+                    ).first.inner_text().strip()
+                except:
+                    pass
+
+                datum_objave = ""
+                try:
+                    datum_objave = page.locator(
+                        '.metadata-item[data-metadata-type="publication-date"] .metadata-content'
+                    ).first.inner_text().strip()
+                except:
+                    pass
+
+                elementi_zakona = page.locator(
+                    '.view-sidebar .metadata-item[data-metadata-type="zakonsko-kazalo-index"] li.law-title a'
+                ).all()
+                popis_zakona = [el.inner_text().strip() for el in elementi_zakona if "NN" not in el.inner_text()]
+
+                tekst_presude = page.locator('.decision-text').inner_text()
+
+                podaci = analiziraj_presudu(tekst_presude)
+                print(f"Pripremljen unos za broj: {podaci.get('naslov', 'Nepoznato')}")
+
+                # --- KORAK C: Unos na ling.hr - Step 1 ---
+                page.goto(url_ling_editora, wait_until="networkidle")
+                time.sleep(3)
+
+                # Aktivacija kartice "Sudska odluka"
+                print("  -> Aktiviram karticu 'Sudska odluka'...")
+                gumb_sudska = page.locator('div[role="button"]:text-is("Sudska odluka")').first
+                gumb_sudska.click()
+                time.sleep(1)
+
+                # Tekstualna polja
+                upisi_tekst(page, 'input[name="title"]', podaci.get('naslov', ''))
+                upisi_tekst(page, 'input[name="decisionNumber"]', podaci.get('broj_odluke', ''))
+                if podaci.get('ecli'):
+                    upisi_tekst(page, 'input[name="ecli"]', podaci['ecli'])
+                upisi_tekst(page, 'input[name="keywords"]', podaci.get('kljucne_rijeci', ''))
+                upisi_tekst(page, 'textarea[name="abstract"]', podaci.get('sazetak', ''))
+
+                # Kalendari
+                unesi_datum(page, "Datum odluke", datum_odluke)
+                unesi_datum(page, "Datum objave", datum_objave)
+
+                # Padajući izbornici
+                if podaci.get("vrsta_odluke"):
+                    odaberi_iz_padajuceg_izbornika(page, "Vrsta odluke", podaci["vrsta_odluke"])
+                if podaci.get("vrsta_postupka"):
+                    odaberi_iz_padajuceg_izbornika(page, "Vrsta postupka", podaci["vrsta_postupka"])
+                if podaci.get("naziv_suda"):
+                    odaberi_iz_padajuceg_izbornika(page, "Naziv suda", podaci["naziv_suda"])
+                if podaci.get("grad"):
+                    odaberi_iz_padajuceg_izbornika(page, "Grad / Ispostava", podaci["grad"])
+
+                # Checkbox - Područje prava
+                if podaci.get("podrucje_prava"):
+                    odaberi_checkbox_podrucje_prava(page, podaci["podrucje_prava"])
+
+                # Tekst editor (Lexical)
+                popuni_lexical_editor(page, tekst_presude)
+
+                # Klik "Dalje"
+                page.get_by_role("button", name="Dalje", exact=True).click(force=True)
+                time.sleep(2)
+
+                # --- KORAK D: Step 2 (Prošle odluke) ---
+                print("  -> Step 2: Prošle odluke - preskačem...")
+                page.wait_for_selector('input[placeholder="Pretraži..."]', timeout=10000)
+                page.get_by_role("button", name="Dalje", exact=True).click(force=True)
+                time.sleep(2)
+
+                # --- KORAK E: Step 3 (Propisi) ---
+                print("  -> Step 3: Unosim povezane propise...")
+                page.wait_for_selector('input[placeholder="Pretraži..."]', timeout=10000)
+
+                for zakon in set(popis_zakona):
+                    try:
+                        trazilica = page.locator('input[placeholder="Pretraži..."]')
+                        trazilica.fill(zakon)
+                        time.sleep(1.5)
+
+                        prvi_rezultat = page.locator('table tbody tr:first-child td span')
+                        if prvi_rezultat.count() > 0:
+                            prvi_rezultat.first.click(force=True)
+                            print(f"    - Dodan: {zakon}")
+                        else:
+                            print(f"    [!] Nema rezultata za: {zakon}")
+                    except Exception as e_zakon:
+                        print(f"    [!] Greška pri dodavanju zakona '{zakon}': {e_zakon}")
+
+                    time.sleep(0.5)
+
+                page.get_by_role("button", name="Dalje", exact=True).click(force=True)
+                time.sleep(2)
+
+                # --- KORAK F: Završni korak ---
+                print("  -> Završni korak: Pregled...")
+                page.wait_for_selector('div[role="button"]:has-text("Pregled")', timeout=10000)
+                page.locator('div[role="button"]:has-text("Pregled")').click(force=True)
+
+                print(f"==== Unos dovršen za: {podaci.get('naslov', '')} ====")
+                time.sleep(3)
+
+            except Exception as e:
+                print(f"[!!!] Neočekivana greška na presudi {link}: {e}")
+                import traceback
+                traceback.print_exc()
+
+        print(f"\n{'='*60}")
+        print("SVE PRESUDE SU USPJEŠNO OBRAĐENE!")
+        time.sleep(10)
+        browser.close()
+
+
+if __name__ == "__main__":
+    glavni_proces()
