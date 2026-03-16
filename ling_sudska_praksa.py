@@ -781,36 +781,51 @@ def glavni_proces():
                 # --- KORAK C: Unos na ling.hr - Step 1 ---
                 page.goto(url_ling_editora, wait_until="networkidle")
 
-                # Stranica automatski prelazi na "Sentenca" nakon ~5s.
-                # Čekamo da se auto-switch DOGODI, pa tek onda kliknemo "Sudska odluka".
-                print("  -> Čekam da se stranica stabilizira (10s)...")
-                time.sleep(10)
+                # Stranica automatski prelazi na "Sentenca" nakon nekog vremena.
+                # Čekamo 20s da se svi auto-switchevi dogode.
+                print("  -> Čekam da se stranica stabilizira (20s)...")
+                time.sleep(20)
+
+                def osiguraj_sudska_odluka():
+                    """Provjeri i klikni 'Sudska odluka' ako je prebačeno na 'Sentenca'."""
+                    if not page.locator('input[name="title"]').is_visible():
+                        print("  [!] Prebačeno na 'Sentenca', vraćam na 'Sudska odluka'...")
+                        page.evaluate('''() => {
+                            const buttons = document.querySelectorAll('div[role="button"]');
+                            for (const btn of buttons) {
+                                if (btn.textContent.trim() === 'Sudska odluka') {
+                                    btn.click();
+                                    return;
+                                }
+                            }
+                        }''')
+                        time.sleep(3)
 
                 print("  -> Aktiviram karticu 'Sudska odluka'...")
-                for pokusaj_tab in range(5):
-                    page.evaluate('''() => {
-                        const buttons = document.querySelectorAll('div[role="button"]');
-                        for (const btn of buttons) {
-                            if (btn.textContent.trim() === 'Sudska odluka') {
-                                btn.click();
-                                return;
-                            }
+                page.evaluate('''() => {
+                    const buttons = document.querySelectorAll('div[role="button"]');
+                    for (const btn of buttons) {
+                        if (btn.textContent.trim() === 'Sudska odluka') {
+                            btn.click();
+                            return;
                         }
-                    }''')
-                    time.sleep(3)
+                    }
+                }''')
+                time.sleep(5)
+                osiguraj_sudska_odluka()
+                print("  -> Kartica 'Sudska odluka' aktivna.")
 
-                    if page.locator('input[name="title"]').is_visible():
-                        print("  -> Kartica 'Sudska odluka' aktivna.")
-                        break
-                    print(f"  [!] Pokušaj {pokusaj_tab+1}: prebacilo se, klikam ponovno...")
-
-                # Tekstualna polja
+                # Tekstualna polja (s provjerom nakon svakog unosa)
                 upisi_tekst(page, 'input[name="title"]', podaci.get('naslov', ''))
+                osiguraj_sudska_odluka()
                 upisi_tekst(page, 'input[name="decisionNumber"]', podaci.get('broj_odluke', ''))
+                osiguraj_sudska_odluka()
                 if podaci.get('ecli'):
                     upisi_tekst(page, 'input[name="ecli"]', podaci['ecli'])
                 upisi_tekst(page, 'input[name="keywords"]', podaci.get('kljucne_rijeci', ''))
+                osiguraj_sudska_odluka()
                 upisi_tekst(page, 'textarea[name="abstract"]', podaci.get('sazetak', ''))
+                osiguraj_sudska_odluka()
 
                 # Kalendari
                 unesi_datum(page, "Datum odluke", datum_odluke)
