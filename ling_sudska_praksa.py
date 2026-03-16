@@ -554,6 +554,123 @@ def popuni_lexical_editor(page, tekst_html, tekst_plain):
         print(f"  [!] Greška pri unosu teksta u editor: {e}")
 
 
+def klikni_dalje(page, opis_koraka):
+    """
+    Klikne gumb 'Dalje' i VERIFICIRA da je navigacija uspjela.
+
+    Problem: .click(force=True) dispatchira DOM evente ali React handler
+    ne reagira. Razlog može biti pointer-events, React synth event system,
+    ili form validacija.
+
+    Koristi više strategija klika i provjerava je li Step 1 sadržaj nestao.
+    """
+    print(f"  -> Klikam 'Dalje' ({opis_koraka})...")
+
+    dalje = page.locator('div[role="button"]:text-is("Dalje")').last
+    dalje.scroll_into_view_if_needed()
+    time.sleep(0.5)
+
+    strategije = [
+        ("JavaScript native click", lambda: page.evaluate('''() => {
+            const buttons = document.querySelectorAll('div[role="button"]');
+            for (const btn of buttons) {
+                if (btn.textContent.trim() === 'Dalje') {
+                    btn.click();
+                    return true;
+                }
+            }
+            return false;
+        }''')),
+        ("dispatch_event click", lambda: dalje.dispatch_event('click')),
+        ("mouse.click na koordinatama", lambda: _mouse_click_element(page, dalje)),
+        ("pointerdown + pointerup + click", lambda: _pointer_click(page, dalje)),
+        ("Playwright click bez force", lambda: dalje.click(timeout=3000)),
+        ("Playwright click force", lambda: dalje.click(force=True)),
+    ]
+
+    for naziv, akcija in strategije:
+        try:
+            akcija()
+        except Exception:
+            pass
+        time.sleep(3)
+
+        try:
+            page.wait_for_load_state("networkidle", timeout=5000)
+        except:
+            pass
+
+        # Provjeri je li navigacija uspjela - na Step 1 postoji input[name="title"]
+        if not page.locator('input[name="title"]').is_visible():
+            print(f"    ✓ Navigacija uspjela (strategija: {naziv})")
+            return True
+
+        print(f"    ✗ Strategija '{naziv}' nije pokrenula navigaciju, pokušavam sljedeću...")
+
+    print("  [!] Nijedna strategija nije uspjela pokrenuti navigaciju!")
+    return False
+
+
+def _mouse_click_element(page, locator):
+    box = locator.bounding_box()
+    if box:
+        page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+
+
+def _pointer_click(page, locator):
+    locator.dispatch_event('pointerdown')
+    time.sleep(0.1)
+    locator.dispatch_event('pointerup')
+    time.sleep(0.1)
+    locator.dispatch_event('click')
+
+
+def klikni_dalje_korak(page, opis, provjera_selektor=None):
+    """Klikne 'Dalje' na koraku koji NIJE Step 1 (nema input[name=title] provjeru)."""
+    print(f"  -> Klikam 'Dalje' ({opis})...")
+
+    dalje = page.locator('div[role="button"]:text-is("Dalje")').last
+    dalje.scroll_into_view_if_needed()
+    time.sleep(0.5)
+
+    for naziv, akcija in [
+        ("JS click", lambda: page.evaluate('''() => {
+            const buttons = document.querySelectorAll('div[role="button"]');
+            for (const btn of buttons) {
+                if (btn.textContent.trim() === 'Dalje') { btn.click(); return; }
+            }
+        }''')),
+        ("dispatch", lambda: dalje.dispatch_event('click')),
+        ("mouse", lambda: _mouse_click_element(page, dalje)),
+        ("force", lambda: dalje.click(force=True)),
+    ]:
+        try:
+            akcija()
+        except:
+            pass
+        time.sleep(3)
+
+        try:
+            page.wait_for_load_state("networkidle", timeout=5000)
+        except:
+            pass
+
+        if provjera_selektor:
+            try:
+                page.wait_for_selector(provjera_selektor, timeout=5000)
+                print(f"    ✓ Navigacija uspjela (strategija: {naziv})")
+                return True
+            except:
+                print(f"    ✗ '{naziv}' nije pokrenula navigaciju...")
+                continue
+        else:
+            print(f"    ✓ Klik izvršen ({naziv})")
+            return True
+
+    print("  [!] 'Dalje' klik nije uspio!")
+    return False
+
+
 # ==========================================
 # 4. GLAVNI ROBOT
 # ==========================================
@@ -682,45 +799,43 @@ def glavni_proces():
                 # Tekst editor (Lexical) - šaljemo HTML za očuvanje formatiranja
                 popuni_lexical_editor(page, tekst_presude_html, tekst_presude)
 
-                # Klik "Dalje" - Step 1 → Step 2
-                print("  -> Klikam 'Dalje' (Step 1 → Step 2)...")
-                dalje = page.locator('div[role="button"]:text-is("Dalje")').first
-                dalje.scroll_into_view_if_needed()
-                time.sleep(0.3)
-                dalje.click(force=True)
-                time.sleep(3)
+                # --- Step 1 → Step 2 ---
+                if not klikni_dalje(page, "Step 1 → Step 2"):
+                    print("  [!] PRESKAĆEM ovu presudu - navigacija Step 1→2 nije uspjela.")
+                    continue
 
                 # --- KORAK D: Step 2 (Prošle odluke) ---
                 print("  -> Step 2: Prošle odluke - preskačem...")
-                try:
-                    page.wait_for_selector('input[placeholder="Pretraži..."]', timeout=15000)
-                except:
-                    print("  [!] Čekam dodatno za učitavanje Step 2...")
-                    page.wait_for_load_state("networkidle")
-                    time.sleep(3)
+                time.sleep(2)
+                page.wait_for_load_state("networkidle")
+                time.sleep(1)
 
-                dalje2 = page.locator('div[role="button"]:text-is("Dalje")').first
-                dalje2.scroll_into_view_if_needed()
-                time.sleep(0.3)
-                dalje2.click(force=True)
-                time.sleep(3)
+                # --- Step 2 → Step 3 ---
+                if not klikni_dalje_korak(page, "Step 2 → Step 3"):
+                    print("  [!] Navigacija Step 2→3 nije uspjela, nastavljam...")
 
                 # --- KORAK E: Step 3 (Propisi) ---
                 print("  -> Step 3: Unosim povezane propise...")
-                try:
-                    page.wait_for_selector('input[placeholder="Pretraži..."]', timeout=15000)
-                except:
-                    page.wait_for_load_state("networkidle")
-                    time.sleep(3)
+                time.sleep(2)
+                page.wait_for_load_state("networkidle")
+                time.sleep(1)
 
                 for zakon in set(popis_zakona):
                     try:
                         trazilica = page.locator('input[placeholder="Pretraži..."]')
-                        trazilica.fill(zakon)
-                        time.sleep(1.5)
+                        if trazilica.count() == 0:
+                            print(f"    [!] Nema polja za pretragu, preskačem propise.")
+                            break
+
+                        trazilica.first.click()
+                        time.sleep(0.3)
+                        trazilica.first.fill("")
+                        time.sleep(0.2)
+                        trazilica.first.fill(zakon)
+                        time.sleep(2)
 
                         prvi_rezultat = page.locator('table tbody tr:first-child td span')
-                        if prvi_rezultat.count() > 0:
+                        if prvi_rezultat.count() > 0 and prvi_rezultat.first.is_visible():
                             prvi_rezultat.first.click(force=True)
                             print(f"    - Dodan: {zakon}")
                         else:
@@ -730,16 +845,20 @@ def glavni_proces():
 
                     time.sleep(0.5)
 
-                dalje3 = page.locator('div[role="button"]:text-is("Dalje")').first
-                dalje3.scroll_into_view_if_needed()
-                time.sleep(0.3)
-                dalje3.click(force=True)
-                time.sleep(3)
+                # --- Step 3 → Step 4 ---
+                klikni_dalje_korak(page, "Step 3 → Step 4")
 
                 # --- KORAK F: Završni korak ---
                 print("  -> Završni korak: Pregled...")
-                page.wait_for_selector('div[role="button"]:has-text("Pregled")', timeout=10000)
-                page.locator('div[role="button"]:has-text("Pregled")').click(force=True)
+                time.sleep(2)
+                page.wait_for_load_state("networkidle")
+                time.sleep(1)
+
+                pregled = page.locator('div[role="button"]:has-text("Pregled")')
+                if pregled.count() > 0:
+                    pregled.first.click(force=True)
+                else:
+                    print("  [!] Gumb 'Pregled' nije pronađen.")
 
                 print(f"==== Unos dovršen za: {podaci.get('naslov', '')} ====")
                 time.sleep(3)
