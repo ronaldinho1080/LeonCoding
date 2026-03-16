@@ -825,6 +825,21 @@ def glavni_proces():
                 # Tekst editor (Lexical) - šaljemo HTML za očuvanje formatiranja
                 popuni_lexical_editor(page, tekst_presude_html, tekst_presude)
 
+                # Označi "Spremno za slanje" checkbox
+                print("  -> Označavam 'Spremno za slanje'...")
+                page.evaluate('''() => {
+                    const spans = document.querySelectorAll('span');
+                    for (const span of spans) {
+                        if (span.textContent.trim() === 'Spremno za slanje') {
+                            const container = span.parentElement;
+                            const cb = container.querySelector('input[type="checkbox"]');
+                            if (cb && !cb.checked) { cb.click(); }
+                            return;
+                        }
+                    }
+                }''')
+                time.sleep(0.5)
+
                 # Provjeri jesu li ključna polja popunjena prije klika na Dalje
                 print("  -> Provjera popunjenosti polja...")
                 naslov_val = page.evaluate('document.querySelector(\'input[name="title"]\')?.value || ""')
@@ -891,17 +906,37 @@ def glavni_proces():
                 # --- Step 3 → Step 4 ---
                 klikni_dalje_korak(page, "Step 3 → Step 4")
 
-                # --- KORAK F: Završni korak ---
-                print("  -> Završni korak: Pregled...")
+                # --- KORAK F: Završni korak - Potvrda unosa ---
+                print("  -> Završni korak: Potvrda unosa...")
                 time.sleep(2)
                 page.wait_for_load_state("networkidle")
                 time.sleep(1)
 
-                pregled = page.locator('div[role="button"]:has-text("Pregled")')
-                if pregled.count() > 0:
-                    pregled.first.click(force=True)
-                else:
-                    print("  [!] Gumb 'Pregled' nije pronađen.")
+                # Klikni "Spremi" gumb
+                page.evaluate('''() => {
+                    const buttons = document.querySelectorAll('div[role="button"]');
+                    for (const btn of buttons) {
+                        if (btn.textContent.trim() === 'Spremi') {
+                            btn.click();
+                            return;
+                        }
+                    }
+                }''')
+                print("  -> Kliknuto 'Spremi'.")
+                time.sleep(3)
+
+                # Dijalog: "Želite li spremiti promjene..." - klikni "Pregled"
+                page.evaluate('''() => {
+                    const buttons = document.querySelectorAll('div[role="button"]');
+                    for (const btn of buttons) {
+                        if (btn.textContent.trim() === 'Pregled') {
+                            btn.click();
+                            return;
+                        }
+                    }
+                }''')
+                print("  -> Kliknuto 'Pregled' u dijalogu.")
+                time.sleep(2)
 
                 print(f"==== Unos dovršen za: {podaci.get('naslov', '')} ====")
                 time.sleep(3)
