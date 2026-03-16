@@ -7,7 +7,7 @@ import time
 # 1. KONFIGURACIJA I LISTE
 # ==========================================
 
-genai.configure(api_key="VAŠ_GOOGLE_GEMINI_API_KLJUC")
+genai.configure(api_key="AIzaSyDVErIrBkqFZB205PPskv8bBKucSNB_DmM")
 
 DOZVOLJENE_VRSTE_ODLUKA = ["Rješenje", "Presuda", "Presuda i rješenje", "Odluka", "Zaključak"]
 
@@ -151,7 +151,7 @@ Tvoj zadatak je analizirati tekst sudske presude i vratiti JSON sa sljedećim kl
 def analiziraj_presudu(tekst_presude):
     print("Šaljem presudu Gemini modelu na analizu...")
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
+        model_name="gemini-2.5-pro",
         system_instruction=UPUTE_ZA_GEMINI,
         generation_config={"response_mime_type": "application/json"}
     )
