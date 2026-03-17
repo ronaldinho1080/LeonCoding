@@ -138,9 +138,9 @@ Tvoj zadatak je analizirati tekst sudske presude i vratiti JSON sa sljedećim kl
 - "naziv_suda": Točan naziv suda kako stoji u zaglavlju.
 - "grad": Prepoznaj grad u kojem se nalazi sud prema zaglavlju presude (npr. 'Općinski sud u Šibeniku' -> 'Šibenik'). Smiješ koristiti SAMO jednu opciju s ovog popisa: {DOZVOLJENI_GRADOVI}
 - "ecli": ECLI broj, ako izričito postoji u tekstu. Ako ne postoji, ostavi prazno.
-- "podrucje_prava": Smiješ koristiti SAMO jednu od ovih opcija: {DOZVOLJENA_PODRUCJA_PRAVA}
+- "podrucja_prava": JSON LISTA (array) od jednog ili više primjenjivih područja prava. Odaberi sva koja su direktno ili posredno primjenjiva na slučaj. Što više to bolje, ali bez prevelike širine. Smiješ koristiti SAMO opcije s ovog popisa: {DOZVOLJENA_PODRUCJA_PRAVA}
 - "kljucne_rijeci": Ključni pravni pojmovi odvojeni zarezom (npr. 'nedozvoljene igre na sreću, oduzimanje predmeta').
-- "sazetak": Vrlo detaljan i stručan pravni sažetak. Mora uključivati: tko je i zašto proglašen krivim/oslobođenim, točan opis radnje/spora, izrečenu sankciju (npr. uvjetna osuda, kazna zatvora) i sporedne mjere (npr. oduzimanje predmeta).
+- "sazetak": Kratak, jasan i smislen pravni sažetak koji korisniku daje uvid u bit spora i presude. Sažetak mora sadržavati: vrstu postupka, bit spora/optužbe, ishod (krivnja/oslobođenje/odbijanje), izrečenu sankciju i eventualne sporedne mjere. NE navodi konkretne novčane iznose, OIB-ove, imena i prezimena stranaka, točne adrese ni druge osobne podatke. Umjesto toga koristi opće formulacije (npr. 'okrivljenik', 'tužitelj', 'oštećenik'). Sažetak treba biti do 3-4 rečenice.
 """
 
 
@@ -780,8 +780,16 @@ def glavni_proces():
                 print(f"Pripremljen unos za broj: {podaci.get('naslov', 'Nepoznato')}")
 
                 # --- KORAK C: Unos na ling.hr - Step 1 ---
-                page.goto(url_ling_editora, wait_until="networkidle")
-                time.sleep(3)
+                # Ponekad stranica prikaže bijelu stranicu - retry s reloadom
+                for _pokusaj_load in range(3):
+                    page.goto(url_ling_editora, wait_until="networkidle")
+                    time.sleep(4)
+                    if page.locator('div[role="button"]:text-is("Sudska odluka")').count() > 0:
+                        break
+                    print("  [!] Bijela stranica, reloadam...")
+                    page.reload(wait_until="networkidle")
+                    time.sleep(4)
+                time.sleep(2)
 
                 def je_sudska_odluka_aktivna():
                     """Provjeri CSS klasu gumba - css-1m26d1t = aktivan."""
@@ -854,9 +862,12 @@ def glavni_proces():
                 if podaci.get("grad"):
                     odaberi_iz_padajuceg_izbornika(page, "Grad / Ispostava", podaci["grad"])
 
-                # Checkbox - Područje prava
-                if podaci.get("podrucje_prava"):
-                    odaberi_checkbox_podrucje_prava(page, podaci["podrucje_prava"])
+                # Checkbox - Područje prava (može biti lista ili string)
+                podrucja = podaci.get("podrucja_prava") or podaci.get("podrucje_prava") or []
+                if isinstance(podrucja, str):
+                    podrucja = [podrucja]
+                for pp in podrucja:
+                    odaberi_checkbox_podrucje_prava(page, pp)
 
                 # Tekst editor (Lexical) - šaljemo HTML za očuvanje formatiranja
                 popuni_lexical_editor(page, tekst_presude_html, tekst_presude)
