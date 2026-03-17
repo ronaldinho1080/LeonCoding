@@ -130,7 +130,7 @@ MJESECI = {
 }
 
 UPUTE_ZA_GEMINI = f"""
-Ti si stručni pravni asistent urednika portala sudske prakse.
+Ti si vrhunski pravnik i stručni pravni asistent urednika portala sudske prakse.
 Tvoj zadatak je analizirati tekst sudske presude i vratiti JSON sa sljedećim ključevima:
 - "broj_odluke": Poslovni broj odluke iz teksta.
 - "vrsta_odluke": Smiješ koristiti SAMO jednu od ovih opcija: {DOZVOLJENE_VRSTE_ODLUKA}
@@ -140,7 +140,7 @@ Tvoj zadatak je analizirati tekst sudske presude i vratiti JSON sa sljedećim kl
 - "ecli": ECLI broj, ako izričito postoji u tekstu. Ako ne postoji, ostavi prazno.
 - "podrucja_prava": JSON LISTA (array) od jednog ili više primjenjivih područja prava. Odaberi sva koja su direktno ili posredno primjenjiva na slučaj. Što više to bolje, ali bez prevelike širine. Smiješ koristiti SAMO opcije s ovog popisa: {DOZVOLJENA_PODRUCJA_PRAVA}
 - "kljucne_rijeci": Ključni pravni pojmovi odvojeni zarezom (npr. 'nedozvoljene igre na sreću, oduzimanje predmeta').
-- "sazetak": Kratak, jasan i smislen pravni sažetak koji korisniku daje uvid u bit spora i presude. Sažetak mora sadržavati: vrstu postupka, bit spora/optužbe, ishod (krivnja/oslobođenje/odbijanje), izrečenu sankciju i eventualne sporedne mjere. NE navodi konkretne novčane iznose, OIB-ove, imena i prezimena stranaka, točne adrese ni druge osobne podatke. Umjesto toga koristi opće formulacije (npr. 'okrivljenik', 'tužitelj', 'oštećenik'). Sažetak treba biti do 3-4 rečenice.
+- "sazetak": Piši kao vrhunski pravnik koristeći preciznu pravnu terminologiju. Sažetak mora biti kratak (3-4 rečenice) i dati jasan uvid u bit spora i odluku suda. Obavezno navedi: pravnu kvalifikaciju djela ili predmet spora, ratio decidendi (razlog odluke), dispozitiv (ishod: krivnja/oslobođenje/odbijanje tužbenog zahtjeva), izrečenu sankciju (kaznenopravnu ili građanskopravnu posljedicu) i eventualne sporedne mjere (oduzimanje imovinske koristi, troškovi postupka i sl.). NE navodi konkretne novčane iznose, OIB-ove, imena i prezimena stranaka, točne adrese ni druge osobne podatke. Koristi procesne oznake stranaka (okrivljenik, optuženik, tužitelj, oštećenik, ovršenik, ovrhovoditelj i sl.).
 """
 
 
@@ -309,86 +309,68 @@ def odaberi_iz_padajuceg_izbornika(page, naziv_polja, trazena_vrijednost):
     """
     Odabire vrijednost iz custom dropdown izbornika.
 
-    Koristi više strategija otvaranja dropdowna jer React komponenta
-    ne reagira uvijek na isti tip klika (posebno nakon zatvaranja
-    prethodnog dropdowna).
+    Koristi čisti JS pristup za otvaranje dropdowna i odabir opcije.
+    Rješava problem s "Naziv suda" gdje je lista dugačka i opcija
+    nije vidljiva jer je izvan scroll-area (is_visible() vraća false
+    iako je dropdown otvoren).
     """
     if not trazena_vrijednost:
         return
     try:
         print(f"  -> Biram iz izbornika '{naziv_polja}': {trazena_vrijednost}")
 
-        # Zatvori bilo koji prethodno otvoreni dropdown
         page.keyboard.press("Escape")
         time.sleep(0.5)
 
-        trigger = page.locator(
+        # Scroll label u vidljivo područje
+        page.locator(
             f'xpath=//div[text()="{naziv_polja}"]'
             f'/following-sibling::div[*[local-name()="svg"]]'
-        ).first
-        trigger.scroll_into_view_if_needed()
+        ).first.scroll_into_view_if_needed()
         time.sleep(0.3)
 
-        opcija = page.locator(f'div.css-114bz43[title="{trazena_vrijednost}"]').first
-        otvoren = False
-
-        # Strategija 1: dispatch_event('click') - šalje DOM event
-        trigger.dispatch_event('click')
-        time.sleep(1.5)
-        if opcija.is_visible():
-            otvoren = True
-
-        # Strategija 2: page.mouse.click na koordinatama triggera
-        if not otvoren:
-            page.keyboard.press("Escape")
-            time.sleep(0.3)
-            box = trigger.bounding_box()
-            if box:
-                page.mouse.click(
-                    box['x'] + box['width'] / 2,
-                    box['y'] + box['height'] / 2
-                )
-                time.sleep(1.5)
-                if opcija.is_visible():
-                    otvoren = True
-
-        # Strategija 3: klik na SVG strelicu unutar triggera
-        if not otvoren:
-            page.keyboard.press("Escape")
-            time.sleep(0.3)
-            svg = trigger.locator('svg').first
-            svg.dispatch_event('click')
-            time.sleep(1.5)
-            if opcija.is_visible():
-                otvoren = True
-
-        # Strategija 4: JavaScript native click na trigger
-        if not otvoren:
-            page.keyboard.press("Escape")
-            time.sleep(0.3)
-            page.evaluate('''(labelText) => {
-                const divs = document.querySelectorAll('div');
-                for (const d of divs) {
-                    if (d.textContent.trim() === labelText &&
-                        d.nextElementSibling &&
-                        d.nextElementSibling.querySelector('svg')) {
-                        d.nextElementSibling.click();
-                        return;
-                    }
+        # Sve u jednom JS pozivu: otvori dropdown, nađi opciju, scrollaj, klikni
+        rezultat = page.evaluate('''([labelText, optionText]) => {
+            // 1. Nađi trigger i klikni ga da otvoriš dropdown
+            const allDivs = document.querySelectorAll('div');
+            let trigger = null;
+            for (const d of allDivs) {
+                if (d.textContent.trim() === labelText &&
+                    d.nextElementSibling &&
+                    d.nextElementSibling.querySelector('svg')) {
+                    trigger = d.nextElementSibling;
+                    break;
                 }
-            }''', naziv_polja)
-            time.sleep(1.5)
-            if opcija.is_visible():
-                otvoren = True
+            }
+            if (!trigger) return { success: false, reason: 'trigger not found' };
+            trigger.click();
 
-        if not otvoren:
-            print(f"  [!] Dropdown '{naziv_polja}' se ne otvara nakon 4 pokušaja.")
-            return
+            // 2. Čekaj kratko pa nađi opciju po title atributu
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    const options = document.querySelectorAll('div.css-114bz43[title]');
+                    for (const opt of options) {
+                        if (opt.getAttribute('title') === optionText) {
+                            opt.scrollIntoView({ block: 'center' });
+                            setTimeout(() => {
+                                opt.click();
+                                resolve({ success: true });
+                            }, 300);
+                            return;
+                        }
+                    }
+                    resolve({ success: false, reason: 'option not found' });
+                }, 1500);
+            });
+        }''', [naziv_polja, trazena_vrijednost])
 
-        opcija.scroll_into_view_if_needed()
-        time.sleep(0.2)
-        opcija.click(force=True)
-        time.sleep(0.8)
+        time.sleep(1)
+
+        if rezultat and rezultat.get('success'):
+            print(f"  -> Odabrano: {trazena_vrijednost}")
+        else:
+            razlog = rezultat.get('reason', 'unknown') if rezultat else 'no result'
+            print(f"  [!] Neuspjeh za '{naziv_polja}': {razlog}")
 
     except Exception as e:
         print(f"  [!] Greška za padajući izbornik '{naziv_polja}': {e}")
