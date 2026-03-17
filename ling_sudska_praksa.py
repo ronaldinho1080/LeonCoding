@@ -694,7 +694,7 @@ def klikni_dalje_korak(page, opis, provjera_selektor=None):
 # ==========================================
 
 def glavni_proces():
-    url_pretrage_sudova = "https://odluke.sudovi.hr/Document/DisplayList?q=zakon%20o%20igrama%20na%20sre%C4%87u&sort=dat&prm=pravomocna"
+    url_pretrage_sudova = "https://odluke.sudovi.hr/Document/DisplayList?page=3&q=zakon%20o%20igrama%20na%20sre%C4%87u&sort=rel&prm=pravomocna"
     url_ling_editora = "https://ling.hr/backoffice/jurisprudence/add/step-one"
 
     with sync_playwright() as p:
@@ -712,9 +712,10 @@ def glavni_proces():
         page.goto(url_pretrage_sudova)
 
         sve_veze = []
-        broj_stranice = 1
+        broj_stranice = 3
+        maks_stranica = 4
 
-        while True:
+        while broj_stranice <= maks_stranica:
             page.wait_for_selector('.search-result')
             time.sleep(2)
 
@@ -726,20 +727,20 @@ def glavni_proces():
 
             print(f"Prikupljena {broj_stranice}. stranica (Trenutno linkova: {len(sve_veze)})")
 
-            next_btn = page.locator('a[aria-label="Next"]')
-            if next_btn.count() > 0:
-                roditelj_li = next_btn.locator('xpath=..')
-                klase_roditelja = roditelj_li.get_attribute('class') or ""
-                if "disabled" in klase_roditelja:
-                    break
+            if broj_stranice < maks_stranica:
+                next_btn = page.locator('a[aria-label="Next"]')
+                if next_btn.count() > 0:
+                    roditelj_li = next_btn.locator('xpath=..')
+                    klase_roditelja = roditelj_li.get_attribute('class') or ""
+                    if "disabled" in klase_roditelja:
+                        break
+                    else:
+                        next_btn.click(force=True)
+                        time.sleep(2)
                 else:
-                    next_btn.click(force=True)
-                    broj_stranice += 1
-            else:
-                break
+                    break
 
-        # TESTIRANJE: Samo prva presuda
-        sve_veze = sve_veze[:1]
+            broj_stranice += 1
         print(f"Pronađeno UKUPNO presuda za obradu: {len(sve_veze)}")
 
         # --- KORAK B: Obrada ---
